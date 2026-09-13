@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+coverage/
+test-results/
+playwright-report/
+
+# デザイン参照用に clone した外部リポジトリ(それぞれ独自の .git を持つ)
+references/

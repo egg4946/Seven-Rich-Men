@@ -1,0 +1,77 @@
+@import 'tailwindcss';
+
+/* melta UI のトークン(references/melta-ui/foundations/theme.md)。詳細は .superdesign/design-system.md */
+@theme {
+  --color-primary-50: #f0f5ff;
+  --color-primary-100: #dde8ff;
+  --color-primary-200: #c0d4ff;
+  --color-primary-300: #95b6ff;
+  --color-primary-400: #6492ff;
+  --color-primary-500: #2b70ef;
+  --color-primary-600: #2250df;
+  --color-primary-700: #1a40b5;
+  --color-primary-800: #13318d;
+  --color-primary-900: #0e266a;
+  --color-primary-950: #07194e;
+
+  --color-body: #3d4b5f;
+
+  --font-sans:
+    'Inter', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic UI', 'Meiryo',
+    sans-serif;
+
+  /* fontSize は8段すべて Tailwind のデフォルトと異なる(本文 18px / 行間 2.0 が melta の核) */
+  --text-xxs: 0.625rem;
+  --text-xxs--line-height: 1.4;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.4;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.7;
+  --text-base: 1.125rem;
+  --text-base--line-height: 2;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 1.4;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 1.4;
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-gray-50);
+    color: var(--color-body);
+    font-family: var(--font-sans);
+    line-height: 2;
+    letter-spacing: 0.02em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

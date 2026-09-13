@@ -1,0 +1,17 @@
+{
+  "name": "seven-rich-men",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @srm/web dev",
+    "build": "pnpm --filter @srm/web build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
