@@ -8,24 +8,33 @@ export function ChoiceChip({
   onChange,
   label,
   description,
+  disabled = false,
 }: {
   name: string
   checked: boolean
   onChange: () => void
   label: string
   description?: string
+  disabled?: boolean
 }) {
   return (
     <label
       className={cx(
-        'relative flex min-h-14 cursor-pointer flex-col items-center justify-center rounded-lg border px-2 py-2 text-center leading-normal transition-colors',
+        'relative flex min-h-14 flex-col items-center justify-center rounded-lg border px-2 py-2 text-center leading-normal transition-colors',
         'focus-within:ring-2 focus-within:ring-primary-500/50',
-        checked
-          ? 'border-primary-500 bg-primary-50 text-primary-700'
-          : 'border-slate-200 bg-white text-slate-700 hover:bg-gray-50',
+        checked ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 bg-white text-slate-700',
+        disabled ? 'cursor-not-allowed opacity-50' : cx('cursor-pointer', !checked && 'hover:bg-gray-50'),
       )}
     >
-      <input type="radio" name={name} checked={checked} onChange={onChange} className="sr-only" />
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        disabled={disabled}
+        aria-disabled={disabled || undefined}
+        onChange={onChange}
+        className="sr-only"
+      />
       <span className="flex items-center gap-1 text-sm font-semibold">
         {checked && <CheckIcon className="h-4 w-4" />}
         {label}

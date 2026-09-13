@@ -39,6 +39,15 @@ export function whoMustAct(state: GameState): PlayerId[] {
 }
 
 /**
+ * 「誰かが答えるべき場面」を識別するキー。制限時間の管理に使う。
+ * 手番中の宣言(ろくろっくび・救急車)では変わらないので、制限時間はリセットされない。
+ */
+export function decisionKey(state: GameState): string {
+  const turns = state.log.reduce((n, e) => n + (e.type === 'TURN_STARTED' ? 1 : 0), 0)
+  return `${turns}|${state.phase}|${state.pending?.type ?? 'turn'}`
+}
+
+/**
  * そのプレイヤーが今取れる操作の一覧。CPUもUIもこの範囲だけを候補にする。
  * 7渡し(GIVE_SEVENS)は組み合わせが多いため列挙しない。枚数は view の pending を見ること。
  */

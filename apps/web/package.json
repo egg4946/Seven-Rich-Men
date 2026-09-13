@@ -13,9 +13,11 @@
   "dependencies": {
     "@srm/game-ai": "workspace:*",
     "@srm/game-core": "workspace:*",
+    "@srm/protocol": "workspace:*",
     "motion": "^13.2.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "socket.io-client": "^4.8.3",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
