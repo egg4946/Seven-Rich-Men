@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @srm/web dev",
+    "dev": "pnpm --parallel --filter @srm/web --filter @srm/server dev",
     "build": "pnpm --filter @srm/web build",
     "test": "pnpm -r test",
+    "test:e2e": "playwright test",
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.4.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

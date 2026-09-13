@@ -1,5 +1,21 @@
 import { create } from 'zustand'
-import { applyAction, whoMustAct, type Action, type GameState } from '@srm/game-core'
+import {
+  applyAction,
+  viewFor,
+  whoMustAct,
+  type Action,
+  type GameEvent,
+  type GameState,
+  type PlayerView,
+} from '@srm/game-core'
+import type { GameUpdate, RoomSettings, RoomView } from '@srm/protocol'
+import {
+  createOnlineClient,
+  loadLastRoom,
+  saveLastRoom,
+  type ConnectionState,
+  type OnlineClient,
+} from '../online/client'
 import { toastForEvent, type ToastTone } from '../ui/labels'
 import { TIMER } from './config'
 import {
@@ -19,26 +35,46 @@ export interface Toast {
   message: string
 }
 
-/** 人間が答えている最中の場面と、その開始時刻 */
+/** 自分が答えている最中の場面と、その開始時刻(この端末の時計) */
 export interface HumanTimer {
   key: string
   startedAt: number
+  baseMs: number
 }
 
+export type Screen = 'title' | 'lobby' | 'game'
+export type Mode = 'solo' | 'online'
+
 interface GameStore {
-  screen: 'title' | 'game'
+  screen: Screen
+  mode: Mode
   /** 対戦ごとに増える。画面の状態(選択中のカードなど)をリセットするのに使う */
   gameId: number
   settings: SoloSettings
+  /** ソロ対戦の状態。オンラインではサーバーだけが持つので null */
   game: GameState | null
+  /** 画面が見るのはこれだけ。ソロでもオンラインでも同じ形 */
+  view: PlayerView | null
+  room: RoomView | null
+  connection: ConnectionState
+  busy: boolean
   toasts: Toast[]
   timer: HumanTimer | null
   reserveLeftMs: number
   now: number
-  start: (settings: SoloSettings) => void
-  act: (action: Action) => void
+
+  startSolo: (settings: SoloSettings) => void
   rematch: () => void
-  leave: () => void
+  leaveSolo: () => void
+  /** 入室できなければエラーメッセージを返す */
+  joinRoom: (playerName: string, roomName: string) => Promise<string | null>
+  /** リロード前に入っていた部屋へ戻る(アプリ起動時に1回だけ) */
+  resumeSession: () => void
+  leaveRoom: () => Promise<void>
+  updateRoomSettings: (settings: RoomSettings) => Promise<void>
+  startOnlineGame: () => Promise<void>
+  showLobby: () => void
+  act: (action: Action) => void
   dismissToast: (id: number) => void
 }
 
@@ -68,10 +104,18 @@ function saveSettings(settings: SoloSettings): void {
   }
 }
 
+function namesOfView(view: PlayerView): Map<string, string> {
+  return new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
+}
+
 let cpuTimers: ReturnType<typeof setTimeout>[] = []
 let ticker: ReturnType<typeof setInterval> | null = null
 const scheduled = new Set<string>()
 let toastSeq = 0
+/** 応答を待っているオンライン操作の「対戦ID|version」 */
+let actInFlight: string | null = null
+/** React の StrictMode で起動時の処理が2回呼ばれても、入り直しは1回にする */
+let resumeAttempted = false
 
 function stopClock(): void {
   for (const timer of cpuTimers) clearTimeout(timer)
@@ -89,24 +133,35 @@ export const useGameStore = create<GameStore>()((set, get) => {
     if (tone !== 'error') setTimeout(() => get().dismissToast(id), 5000)
   }
 
-  const announce = (state: GameState, from: number) => {
-    const names = new Map(state.players.map((p) => [p.id, p.name]))
-    const nameOf = (id: string) => (id === HUMAN_ID ? 'あなた' : (names.get(id) ?? id))
-    for (const event of state.log.slice(from)) {
-      const toast = toastForEvent(event, nameOf, HUMAN_ID)
+  const announce = (events: GameEvent[], names: Map<string, string>, youId: string) => {
+    const nameOf = (id: string) => (id === youId ? 'あなた' : (names.get(id) ?? id))
+    for (const event of events) {
+      const toast = toastForEvent(event, nameOf, youId)
       if (toast) pushToast(toast.tone, toast.message)
     }
   }
 
+  const tick = () => {
+    const now = Date.now()
+    set({ now })
+    if (get().mode === 'solo') checkSoloTimeout(now)
+  }
+
+  const startTicker = () => {
+    if (ticker === null) ticker = setInterval(tick, 200)
+  }
+
+  // --- ソロ対戦 -------------------------------------------------------------
+
   /** 人間の回答が終わったら、基本時間を超えた分だけ持ち時間を減らす */
-  const closeTimer = (now: number) => {
+  const closeSoloTimer = (now: number) => {
     const { timer, reserveLeftMs } = get()
     if (!timer) return
-    const overtime = Math.max(0, now - timer.startedAt - TIMER.baseMs)
+    const overtime = Math.max(0, now - timer.startedAt - timer.baseMs)
     set({ timer: null, reserveLeftMs: Math.max(0, reserveLeftMs - overtime) })
   }
 
-  const apply = (action: Action): boolean => {
+  const applySolo = (action: Action): boolean => {
     const game = get().game
     if (!game) return false
     const result = applyAction(game, action)
@@ -114,19 +169,20 @@ export const useGameStore = create<GameStore>()((set, get) => {
       if (action.playerId === HUMAN_ID) pushToast('error', result.error)
       return false
     }
-    set({ game: result.state })
-    announce(result.state, game.log.length)
-    sync()
+    const view = viewFor(result.state, HUMAN_ID)
+    set({ game: result.state, view })
+    if (view) announce(result.state.log.slice(game.log.length), namesOfView(view), HUMAN_ID)
+    syncSolo()
     return true
   }
 
   /** 状態が変わるたびに、人間の制限時間と CPU の操作を段取りする */
-  const sync = () => {
+  const syncSolo = () => {
     const game = get().game
     if (!game) return
     const now = Date.now()
     if (game.phase === 'ended') {
-      closeTimer(now)
+      closeSoloTimer(now)
       stopClock()
       return
     }
@@ -134,8 +190,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
     const key = decisionKey(game)
     const humanMustAct = whoMustAct(game).includes(HUMAN_ID)
     const timer = get().timer
-    if (timer && (!humanMustAct || timer.key !== key)) closeTimer(now)
-    if (humanMustAct && TIMER.enabled && get().timer === null) set({ timer: { key, startedAt: now } })
+    if (timer && (!humanMustAct || timer.key !== key)) closeSoloTimer(now)
+    if (humanMustAct && TIMER.enabled && get().timer === null) {
+      set({ timer: { key, startedAt: now, baseMs: TIMER.baseMs } })
+    }
 
     for (const id of cpuActors(game)) {
       const tag = `${game.version}|${id}`
@@ -146,65 +204,212 @@ export const useGameStore = create<GameStore>()((set, get) => {
           const current = get().game
           if (!current || decisionKey(current) !== key || !whoMustAct(current).includes(id)) return
           const action = decideCpu(current, id, get().settings.level)
-          if (action && apply(action)) return
+          if (action && applySolo(action)) return
           const fallback = timeoutAction(current, id)
-          if (fallback) apply(fallback)
+          if (fallback) applySolo(fallback)
         }, cpuDelayMs(game)),
       )
     }
   }
 
-  const tick = () => {
-    const now = Date.now()
-    set({ now })
+  const checkSoloTimeout = (now: number) => {
     const { game, timer, reserveLeftMs } = get()
     if (!game || !timer || game.phase === 'ended') return
-    if (now - timer.startedAt < TIMER.baseMs + reserveLeftMs) return
+    if (now - timer.startedAt < timer.baseMs + reserveLeftMs) return
     set({ timer: null, reserveLeftMs: 0 })
     const action = timeoutAction(game, HUMAN_ID)
-    if (!action || !apply(action)) sync()
+    if (!action || !applySolo(action)) syncSolo()
+  }
+
+  // --- オンライン対戦 -------------------------------------------------------
+
+  const onRoom = (room: RoomView) => {
+    const s = get()
+    if (s.mode !== 'online') return
+    const seated = room.members.some((m) => m.id === room.you && m.seated)
+    // 通知を取りこぼして再戦をまたいでも、対戦IDが変われば前の対戦の画面を捨てる
+    const startedNewGame = room.matchId !== null && room.matchId !== s.room?.matchId
+
+    let screen: Screen
+    if (room.phase === 'playing') screen = seated ? 'game' : 'lobby'
+    else if (room.phase === 'result') screen = s.screen === 'game' && seated ? 'game' : 'lobby'
+    else screen = 'lobby'
+
+    set({
+      room,
+      screen,
+      ...(startedNewGame ? { gameId: s.gameId + 1, view: null, timer: null, toasts: [] } : {}),
+    })
+  }
+
+  const onGame = (update: GameUpdate) => {
+    const s = get()
+    if (s.mode !== 'online') return
+    // 部屋情報は同じ接続で対戦の更新より先に届くので、部屋の対戦IDと違う更新は前の対戦のもの
+    if (update.matchId !== s.room?.matchId) return
+    const previous = s.view
+    // 通信の順番が前後しても、古い状態で上書きしない(version は同じ対戦の中でだけ比べる)
+    if (previous && update.view.version < previous.version) return
+
+    const now = Date.now()
+    const { timer } = update
+    set({
+      view: update.view,
+      now,
+      timer: timer ? { key: timer.key, startedAt: now - timer.elapsedMs, baseMs: timer.baseMs } : null,
+      reserveLeftMs: timer ? timer.reserveMs : s.reserveLeftMs,
+    })
+    // 入室・再接続した直後は、過去の出来事を通知し直さない
+    if (previous) {
+      announce(update.view.log.slice(previous.log.length), namesOfView(update.view), update.view.you.id)
+    }
+    startTicker()
+  }
+
+  let client: OnlineClient | null = null
+  const online = (): OnlineClient => {
+    client ??= createOnlineClient({
+      onRoom,
+      onGame,
+      onConnection: (connection) => set({ connection }),
+      onRejoinFailed: (error) => {
+        stopClock()
+        saveLastRoom(null)
+        set({ mode: 'solo', screen: 'title', room: null, view: null, timer: null })
+        pushToast('error', error)
+      },
+    })
+    return client
   }
 
   return {
     screen: 'title',
+    mode: 'solo',
     gameId: 0,
     settings: loadSettings(),
     game: null,
+    view: null,
+    room: null,
+    connection: 'idle',
+    busy: false,
     toasts: [],
     timer: null,
     reserveLeftMs: TIMER.reserveMs,
     now: Date.now(),
 
-    start(settings) {
+    startSolo(settings) {
       stopClock()
       saveSettings(settings)
       const game = createSoloGame(settings)
       set((s) => ({
         screen: 'game',
+        mode: 'solo',
         gameId: s.gameId + 1,
         settings,
         game,
+        view: viewFor(game, HUMAN_ID),
+        room: null,
         toasts: [],
         timer: null,
         reserveLeftMs: TIMER.reserveMs,
         now: Date.now(),
       }))
-      ticker = setInterval(tick, 200)
-      announce(game, 0)
-      sync()
-    },
-
-    act(action) {
-      apply(action)
+      startTicker()
+      syncSolo()
     },
 
     rematch() {
-      get().start(get().settings)
+      get().startSolo(get().settings)
     },
 
-    leave() {
+    leaveSolo() {
       stopClock()
-      set({ screen: 'title', game: null, toasts: [], timer: null })
+      set({ screen: 'title', game: null, view: null, toasts: [], timer: null })
+    },
+
+    async joinRoom(playerName, roomName) {
+      stopClock()
+      const settings = { ...get().settings, name: playerName }
+      saveSettings(settings)
+      set({ mode: 'online', busy: true, settings, game: null, view: null, room: null, timer: null, toasts: [] })
+      const target = { roomName, playerName: playerName || 'ゲスト' }
+      const result = await online().join(target)
+      set({ busy: false })
+      if (!result.ok) {
+        set({ mode: 'solo' })
+        return result.error
+      }
+      saveLastRoom(target)
+      startTicker()
+      return null
+    },
+
+    resumeSession() {
+      if (resumeAttempted) return
+      resumeAttempted = true
+      const last = loadLastRoom()
+      if (!last || get().screen !== 'title') return
+      void get()
+        .joinRoom(last.playerName, last.roomName)
+        .then((error) => {
+          if (!error) return
+          saveLastRoom(null)
+          pushToast('error', `前の部屋に戻れませんでした: ${error}`)
+        })
+    },
+
+    async leaveRoom() {
+      stopClock()
+      saveLastRoom(null)
+      set({ busy: true })
+      await online().leave()
+      set({
+        busy: false,
+        mode: 'solo',
+        screen: 'title',
+        room: null,
+        view: null,
+        timer: null,
+        toasts: [],
+        connection: 'idle',
+      })
+    },
+
+    async updateRoomSettings(settings) {
+      const result = await online().settings(settings)
+      if (!result.ok) pushToast('error', result.error)
+    },
+
+    async startOnlineGame() {
+      set({ busy: true })
+      const result = await online().start()
+      set({ busy: false })
+      if (!result.ok) pushToast('error', result.error)
+    },
+
+    showLobby() {
+      set({ screen: 'lobby' })
+    },
+
+    act(action) {
+      if (get().mode === 'solo') {
+        applySolo(action)
+        return
+      }
+      const { view, room } = get()
+      if (!view || !room?.matchId) return
+      // 連打で同じ画面から二重に送ると、2回目が stale になり成功したのに警告が出てしまう
+      const sent = `${room.matchId}|${view.version}`
+      if (actInFlight === sent) return
+      actInFlight = sent
+      void online()
+        .act({ matchId: room.matchId, version: view.version, action })
+        .then((result) => {
+          if (actInFlight === sent) actInFlight = null
+          if (result.ok) return
+          // 画面が古かっただけなら最新の状態がすぐ届くので、消える通知でやり直しを促す
+          pushToast(result.code === 'stale' ? 'alert' : 'error', result.error)
+        })
     },
 
     dismissToast(id) {

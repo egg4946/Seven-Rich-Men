@@ -1,4 +1,3 @@
-import { TIMER } from '../game/config'
 import { useGameStore } from '../game/store'
 import { cx } from '../ui/cx'
 
@@ -10,10 +9,10 @@ export function TimerBar() {
   if (!timer) return null
 
   const elapsed = Math.max(0, now - timer.startedAt)
-  const baseLeft = Math.max(0, TIMER.baseMs - elapsed)
-  const reserveLeft = Math.max(0, reserve - Math.max(0, elapsed - TIMER.baseMs))
+  const baseLeft = Math.max(0, timer.baseMs - elapsed)
+  const reserveLeft = Math.max(0, reserve - Math.max(0, elapsed - timer.baseMs))
   const inReserve = baseLeft === 0
-  const ratio = inReserve ? (reserve > 0 ? reserveLeft / reserve : 0) : baseLeft / TIMER.baseMs
+  const ratio = inReserve ? (reserve > 0 ? reserveLeft / reserve : 0) : baseLeft / Math.max(1, timer.baseMs)
   const seconds = Math.ceil((inReserve ? reserveLeft : baseLeft) / 1000)
 
   return (

@@ -1,3 +1,6 @@
 packages:
   - 'packages/*'
   - 'apps/*'
+# 依存パッケージのインストール時スクリプトは実行しない(esbuild は tsx の依存。本体はスクリプトなしで動く)
+allowBuilds:
+  esbuild: false

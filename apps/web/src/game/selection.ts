@@ -25,3 +25,12 @@ export function selectionMode(view: PlayerView): SelectionMode {
   }
   return { type: 'none' }
 }
+
+/**
+ * 視点データから「答えるべき場面」を識別するキー(game-core の decisionKey と同じ規則)。
+ * これが変わったら、選択中のカードをリセットする。
+ */
+export function viewDecisionKey(view: PlayerView): string {
+  const turns = view.log.reduce((n, e) => n + (e.type === 'TURN_STARTED' ? 1 : 0), 0)
+  return `${turns}|${view.phase}|${view.pending?.type ?? 'turn'}`
+}

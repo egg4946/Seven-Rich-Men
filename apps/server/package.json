@@ -1,0 +1,22 @@
+{
+  "name": "@srm/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@srm/game-ai": "workspace:*",
+    "@srm/game-core": "workspace:*",
+    "@srm/protocol": "workspace:*",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3",
+    "tsx": "^4.23.13"
+  }
+}

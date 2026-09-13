@@ -1,9 +1,10 @@
 import { LayoutGroup } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
-import { viewFor, type CardId } from '@srm/game-core'
+import type { CardId } from '@srm/game-core'
 import { Badge } from '../components/Badge'
 import { Board } from '../components/Board'
 import { Button } from '../components/Button'
+import { ConnectionBanner } from '../components/ConnectionBanner'
 import { DecisionPanel } from '../components/DecisionPanel'
 import { Dialog } from '../components/Dialog'
 import { Hand } from '../components/Hand'
@@ -13,56 +14,73 @@ import { ResultDialog } from '../components/ResultDialog'
 import { RulesDialog } from '../components/RulesDialog'
 import { TimerBar } from '../components/TimerBar'
 import { Toasts } from '../components/Toasts'
-import { HUMAN_ID, decisionKey } from '../game/controller'
-import { selectionMode } from '../game/selection'
+import { selectionMode, viewDecisionKey } from '../game/selection'
 import { useGameStore } from '../game/store'
 import { RotateIcon } from '../ui/icons'
 import { directionLabel } from '../ui/labels'
 
+/**
+ * 対戦画面。見るのは自分の視点(PlayerView)だけなので、ソロでもオンラインでも同じ画面を使う。
+ */
 export function GameScreen() {
-  const game = useGameStore((s) => s.game)
+  const view = useGameStore((s) => s.view)
+  const mode = useGameStore((s) => s.mode)
+  const room = useGameStore((s) => s.room)
+  const busy = useGameStore((s) => s.busy)
   const act = useGameStore((s) => s.act)
-  const leave = useGameStore((s) => s.leave)
   const rematch = useGameStore((s) => s.rematch)
+  const leaveSolo = useGameStore((s) => s.leaveSolo)
+  const leaveRoom = useGameStore((s) => s.leaveRoom)
+  const startOnlineGame = useGameStore((s) => s.startOnlineGame)
+  const showLobby = useGameStore((s) => s.showLobby)
 
   const [selected, setSelected] = useState<CardId[]>([])
   const [rulesOpen, setRulesOpen] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [resultOpen, setResultOpen] = useState(true)
 
-  // UI は人間の視点(viewFor)だけを見る。オンライン対戦でもサーバーから同じ形で受け取る。
-  const view = useMemo(() => (game ? viewFor(game, HUMAN_ID) : null), [game])
-  const key = game ? decisionKey(game) : ''
-
+  const key = view ? viewDecisionKey(view) : ''
   useEffect(() => {
     setSelected([])
   }, [key])
 
-  const players = game?.players
   const nameOf = useMemo(() => {
-    const names = new Map((players ?? []).map((p) => [p.id, p.name]))
-    return (id: string) => (id === HUMAN_ID ? 'あなた' : (names.get(id) ?? id))
-  }, [players])
+    if (!view) return (id: string) => id
+    const names = new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
+    return (id: string) => (id === view.you.id ? 'あなた' : (names.get(id) ?? id))
+  }, [view])
 
-  if (!game || !view) return null
+  if (!view) {
+    return (
+      <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
+        <ConnectionBanner />
+        <p role="status" className="m-auto text-sm text-body">
+          対戦を準備しています…
+        </p>
+      </div>
+    )
+  }
 
-  const mode = selectionMode(view)
-  const seat = game.players.findIndex((p) => p.id === HUMAN_ID)
-  const nextPlayer = game.players[(seat + 1) % game.players.length]
-  const giveToName = nextPlayer ? nameOf(nextPlayer.id) : '次の人'
+  const you = view.you.id
+  const online = mode === 'online'
+  const isHost = !!room && room.hostId === room.you
+  const mode_ = selectionMode(view)
+  const seat = view.seatOrder.indexOf(you)
+  const nextPlayer = view.seatOrder[(seat + 1) % view.seatOrder.length]
+  const giveToName = nextPlayer ? nameOf(nextPlayer) : '次の人'
 
   const toggle = (id: CardId) => {
-    if (mode.type === 'none') return
+    if (mode_.type === 'none') return
     setSelected((current) => {
       if (current.includes(id)) return current.filter((x) => x !== id)
-      if (mode.type === 'give') return current.length >= mode.count ? current : [...current, id]
+      if (mode_.type === 'give') return current.length >= mode_.count ? current : [...current, id]
       return [id]
     })
   }
 
   const selectedCard = selected[0]
   const highlight =
-    mode.type === 'turn' &&
+    mode_.type === 'turn' &&
     selectedCard !== undefined &&
     view.legalActions.some((a) => a.type === 'PLACE' && a.card === selectedCard)
       ? selectedCard
@@ -74,27 +92,66 @@ export function GameScreen() {
       ? '対戦終了'
       : setup
         ? '7渡し'
-        : view.turnPlayerId === HUMAN_ID
+        : view.turnPlayerId === you
           ? 'あなたの手番'
           : view.turnPlayerId
             ? `${nameOf(view.turnPlayerId)} の手番`
             : ''
   const isTurn = (id: string) => view.phase !== 'ended' && !setup && view.turnPlayerId === id
 
+  const confirmLeave = () => {
+    setLeaveOpen(false)
+    if (online) void leaveRoom()
+    else leaveSolo()
+  }
+
+  // 対戦が終わったあとの操作。オンラインでは次の対戦を始められるのは部屋主だけ
+  const endActions = online ? (
+    <>
+      {isHost && (
+        <Button disabled={busy} onClick={() => void startOnlineGame()}>
+          同じメンバーでもう一度
+        </Button>
+      )}
+      <Button variant="secondary" onClick={showLobby}>
+        ロビーに戻る
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button variant="secondary" onClick={leaveSolo}>
+        タイトルに戻る
+      </Button>
+      <Button onClick={rematch}>もう一度遊ぶ</Button>
+    </>
+  )
+
   return (
     <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
-          <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
+            {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
+          </div>
           <div className="flex items-center gap-1">
             <Button variant="subtle" size="sm" onClick={() => setRulesOpen(true)}>
               ルール
             </Button>
-            <Button variant="subtle" size="sm" onClick={() => (view.phase === 'ended' ? leave() : setLeaveOpen(true))}>
-              やめる
+            <Button
+              variant="subtle"
+              size="sm"
+              onClick={() => {
+                if (view.phase !== 'ended') setLeaveOpen(true)
+                else if (online) showLobby()
+                else leaveSolo()
+              }}
+            >
+              {online ? '退室' : 'やめる'}
             </Button>
           </div>
         </div>
+        <ConnectionBanner />
       </header>
 
       <LayoutGroup>
@@ -159,16 +216,16 @@ export function GameScreen() {
             <TimerBar />
             <DecisionPanel
               view={view}
-              mode={mode}
+              mode={mode_}
               selected={selected}
               decisionKey={key}
               act={act}
               nameOf={nameOf}
               giveToName={giveToName}
-              onShowResult={() => setResultOpen(true)}
-              onRematch={rematch}
+              endDescription={online && !isHost ? '部屋主が次の対戦を始めるのを待っています。' : undefined}
+              endActions={endActions}
             />
-            <Hand view={view} mode={mode} selected={selected} onToggle={toggle} />
+            <Hand view={view} mode={mode_} selected={selected} onToggle={toggle} />
           </div>
         </div>
       </LayoutGroup>
@@ -177,7 +234,7 @@ export function GameScreen() {
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
       <Dialog
         open={leaveOpen}
-        title="対戦をやめますか?"
+        title={online ? '退室しますか?' : '対戦をやめますか?'}
         size="sm"
         onClose={() => setLeaveOpen(false)}
         footer={
@@ -185,20 +242,23 @@ export function GameScreen() {
             <Button variant="secondary" onClick={() => setLeaveOpen(false)}>
               続ける
             </Button>
-            <Button variant="danger" onClick={leave}>
-              やめる
+            <Button variant="danger" onClick={confirmLeave}>
+              {online ? '退室する' : 'やめる'}
             </Button>
           </>
         }
       >
-        <p>この対戦の進行は保存されません。</p>
+        <p>
+          {online
+            ? 'この対戦の残りは、CPUがあなたの代わりに打ちます。対戦が終わるまで、この部屋には戻れません。'
+            : 'この対戦の進行は保存されません。'}
+        </p>
       </Dialog>
       <ResultDialog
         open={view.phase === 'ended' && resultOpen}
-        game={game}
+        view={view}
         onClose={() => setResultOpen(false)}
-        onRematch={rematch}
-        onLeave={leave}
+        actions={endActions}
       />
     </div>
   )

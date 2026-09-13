@@ -1,17 +1,36 @@
-import { useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import type { CpuLevel } from '@srm/game-ai'
+import { LIMITS } from '@srm/protocol'
 import { Button } from '../components/Button'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
+import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
+
+const inputClass =
+  'h-11 w-full rounded-lg border border-slate-300 px-3 text-base text-slate-900 caret-primary-500 transition-colors placeholder:text-slate-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 focus:outline-none'
 
 export function TitleScreen() {
   const initial = useGameStore((s) => s.settings)
-  const start = useGameStore((s) => s.start)
+  const busy = useGameStore((s) => s.busy)
+  const startSolo = useGameStore((s) => s.startSolo)
+  const joinRoom = useGameStore((s) => s.joinRoom)
+
+  // 招待リンク(?room=部屋名)から来たら、部屋名を入れておく
+  const invitedRoom = useMemo(() => new URLSearchParams(window.location.search).get('room') ?? '', [])
   const [name, setName] = useState(initial.name)
+  const [roomName, setRoomName] = useState(invitedRoom)
+  const [joinError, setJoinError] = useState<string | null>(null)
   const [cpuCount, setCpuCount] = useState(initial.cpuCount)
   const [level, setLevel] = useState<CpuLevel>(initial.level)
   const [rulesOpen, setRulesOpen] = useState(false)
+
+  const submitJoin = async (event: FormEvent) => {
+    event.preventDefault()
+    setJoinError(null)
+    const error = await joinRoom(name.trim(), roomName.trim())
+    if (error) setJoinError(error)
+  }
 
   return (
     <main className="min-h-dvh bg-gray-50 px-4 py-10 md:py-16">
@@ -22,28 +41,69 @@ export function TitleScreen() {
           7から並べて、手札を先になくした人の勝ち。8切り・Qボンバー・ジョーカーなど、数字ごとの効果で場が大きく動きます。
         </p>
 
-        <form
-          className="mt-8 space-y-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
-          onSubmit={(event) => {
-            event.preventDefault()
-            start({ name: name.trim(), cpuCount, level })
-          }}
+        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm">
+          <label htmlFor="player-name" className="mb-1 block text-sm font-medium text-slate-700">
+            あなたの名前
+          </label>
+          <input
+            id="player-name"
+            type="text"
+            value={name}
+            maxLength={LIMITS.playerName}
+            autoComplete="nickname"
+            placeholder="あなた"
+            onChange={(event) => setName(event.target.value)}
+            className={inputClass}
+          />
+        </div>
+
+        <section
+          aria-labelledby="online-heading"
+          className="mt-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
         >
-          <div>
-            <label htmlFor="player-name" className="mb-1 block text-sm font-medium text-slate-700">
-              あなたの名前
-            </label>
-            <input
-              id="player-name"
-              type="text"
-              value={name}
-              maxLength={12}
-              autoComplete="nickname"
-              placeholder="あなた"
-              onChange={(event) => setName(event.target.value)}
-              className="h-11 w-full rounded-lg border border-slate-300 px-3 text-base text-slate-900 caret-primary-500 transition-colors placeholder:text-slate-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 focus:outline-none"
-            />
-          </div>
+          <h2 id="online-heading" className="text-lg font-semibold text-slate-900">
+            友達と遊ぶ
+          </h2>
+          <p className="mt-1 text-sm text-body">同じ部屋名を入れた人と遊べます。部屋がなければ新しく作られます。</p>
+          <form className="mt-4 space-y-4" onSubmit={(event) => void submitJoin(event)}>
+            <div>
+              <label htmlFor="room-name" className="mb-1 block text-sm font-medium text-slate-700">
+                部屋名
+              </label>
+              <input
+                id="room-name"
+                type="text"
+                value={roomName}
+                maxLength={LIMITS.roomName}
+                autoFocus={invitedRoom !== ''}
+                placeholder="例: いつものメンバー"
+                aria-invalid={joinError ? true : undefined}
+                aria-describedby={joinError ? 'join-error' : undefined}
+                onChange={(event) => {
+                  setRoomName(event.target.value)
+                  setJoinError(null)
+                }}
+                className={inputClass}
+              />
+              {joinError && (
+                <p id="join-error" role="alert" className="mt-1 text-sm text-red-700">
+                  {joinError}
+                </p>
+              )}
+            </div>
+            <Button type="submit" size="lg" className="w-full" disabled={busy || roomName.trim() === ''}>
+              {busy ? '接続しています…' : '部屋に入る'}
+            </Button>
+          </form>
+        </section>
+
+        <section
+          aria-labelledby="solo-heading"
+          className="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
+        >
+          <h2 id="solo-heading" className="text-lg font-semibold text-slate-900">
+            ひとりで遊ぶ
+          </h2>
 
           <div>
             <fieldset>
@@ -85,19 +145,25 @@ export function TitleScreen() {
             </fieldset>
           </div>
 
-          <Button type="submit" size="lg" className="w-full">
-            対戦をはじめる
+          <Button
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            disabled={busy}
+            onClick={() => startSolo({ name: name.trim(), cpuCount, level })}
+          >
+            CPUと対戦する
           </Button>
-        </form>
+        </section>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 leading-normal">
+        <div className="mt-6 leading-normal">
           <Button variant="subtle" onClick={() => setRulesOpen(true)}>
             ルールを見る
           </Button>
-          <p className="text-xs text-slate-500">オンライン対戦は準備中です</p>
         </div>
       </div>
 
+      <Toasts />
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
     </main>
   )

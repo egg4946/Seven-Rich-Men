@@ -67,8 +67,8 @@ export function DecisionPanel({
   act,
   nameOf,
   giveToName,
-  onShowResult,
-  onRematch,
+  endDescription,
+  endActions,
 }: {
   view: PlayerView
   mode: SelectionMode
@@ -77,26 +77,15 @@ export function DecisionPanel({
   act: (action: Action) => void
   nameOf: NameOf
   giveToName: string
-  onShowResult: () => void
-  onRematch: () => void
+  /** 対戦終了後に出す説明(オンラインで次の対戦を待つときなど) */
+  endDescription?: string
+  endActions: ReactNode
 }) {
   const me = view.you.id
   const pending = view.pending
 
   if (view.phase === 'ended') {
-    return (
-      <Panel
-        title="対戦終了"
-        actions={
-          <>
-            <Button onClick={onRematch}>もう一度遊ぶ</Button>
-            <Button variant="secondary" onClick={onShowResult}>
-              結果を見る
-            </Button>
-          </>
-        }
-      />
-    )
+    return <Panel title="対戦終了" description={endDescription} actions={endActions} />
   }
 
   if (pending) {

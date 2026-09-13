@@ -61,6 +61,8 @@ export interface PlayerView {
   version: number
   you: SelfView
   opponents: OpponentView[]
+  /** 席順(時計回り)。7渡しの渡し先や、相手の並びの表示に使う。 */
+  seatOrder: PlayerId[]
   board: Board
   direction: Direction
   phase: Phase
@@ -152,6 +154,7 @@ export function viewFor(state: GameState, playerId: PlayerId): PlayerView | null
         skips: p.skips,
         status: p.status,
       })),
+    seatOrder: state.players.map((p) => p.id),
     board: structuredClone(state.board),
     direction: state.direction,
     phase: state.phase,
