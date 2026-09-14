@@ -55,6 +55,15 @@ export function AlertIcon(props: IconProps) {
   )
 }
 
+/** 演出の切り替え */
+export function SparkleIcon(props: IconProps) {
+  return (
+    <svg {...stroke} {...props}>
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1" />
+    </svg>
+  )
+}
+
 /** 手番の向き。反時計回りは左右反転して表す */
 export function RotateIcon({ direction, style, ...props }: IconProps & { direction: 1 | -1 }) {
   return (

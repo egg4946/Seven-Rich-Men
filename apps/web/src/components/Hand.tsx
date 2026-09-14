@@ -1,25 +1,39 @@
-import { JOKER, type CardId, type PlayerView } from '@srm/game-core'
-import type { SelectionMode } from '../game/selection'
-import { HandCard } from './PlayingCard'
+import { useEffect, useRef } from 'react'
+import type { CardId, PlayerView } from '@srm/game-core'
+import { playableCards, type SelectionMode } from '../game/selection'
+import { HandCard, type CardEnter } from './PlayingCard'
 
 export function Hand({
   view,
   mode,
   selected,
   onToggle,
+  onPlay,
 }: {
   view: PlayerView
   mode: SelectionMode
   selected: CardId[]
   onToggle: (id: CardId) => void
+  /** ダブルクリック・上スワイプで出す */
+  onPlay: (id: CardId) => void
 }) {
-  const playable = new Set<CardId>()
-  for (const action of view.legalActions) {
-    if (action.type === 'PLACE') playable.add(action.card)
-    if (action.type === 'USE_JOKER') playable.add(JOKER)
-  }
+  const playable = playableCards(view, mode)
   const revealed = new Set(view.you.revealed)
   const hand = view.you.hand
+  // 7渡しは複数枚を選ぶだけなので、すぐに出す操作は付けない
+  const canPlay = mode.type === 'turn' || mode.type === 'ten'
+
+  // 前に描いた手札。新しく来たカードだけ登場させる(最初の表示は1枚ずつ配る)
+  const known = useRef<Set<CardId> | null>(null)
+  useEffect(() => {
+    known.current = new Set(hand)
+  }, [hand])
+  const shown = known.current
+  let dealt = 0
+  const enterOf = (id: CardId): CardEnter | null => {
+    if (shown?.has(id)) return null
+    return { delay: shown ? 0 : Math.min(dealt++ * 0.04, 0.8) }
+  }
 
   return (
     <div
@@ -35,9 +49,11 @@ export function Hand({
             key={id}
             id={id}
             selected={selected.includes(id)}
-            muted={mode.type === 'turn' && !playable.has(id)}
+            muted={playable !== null && !playable.has(id)}
             revealed={revealed.has(id)}
+            enter={enterOf(id)}
             onClick={mode.type === 'none' ? undefined : () => onToggle(id)}
+            onPlay={canPlay ? () => onPlay(id) : undefined}
           />
         ))
       )}
