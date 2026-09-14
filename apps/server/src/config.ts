@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { AppOptions } from './server.js'
 
 function numberFromEnv(name: string, fallback: number): number {
@@ -5,6 +8,12 @@ function numberFromEnv(name: string, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback
   const value = Number(raw)
   return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/** 配る画面のフォルダー。既定は apps/web/dist。ビルドしていなければ画面は配らない */
+function webDirFromEnv(): string | null {
+  const dir = resolve(process.env.SRM_WEB_DIR || fileURLToPath(new URL('../../web/dist', import.meta.url)))
+  return existsSync(join(dir, 'index.html')) ? dir : null
 }
 
 /** 環境変数から読むサーバー設定。テストや動作確認では時間を短くできる */
@@ -20,4 +29,5 @@ export const SERVER_CONFIG: AppOptions & { port: number } = {
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+  webDir: webDirFromEnv(),
 }
