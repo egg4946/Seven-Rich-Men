@@ -38,7 +38,8 @@ export function Button({
       disabled={disabled}
       aria-disabled={disabled || undefined}
       className={cx(
-        'inline-flex items-center justify-center rounded-lg font-medium leading-none transition-colors',
+        // 押した瞬間だけ少し縮める(transform なので軽い)
+        'inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium leading-none transition duration-150 enabled:active:scale-[0.97]',
         'focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANT[variant],

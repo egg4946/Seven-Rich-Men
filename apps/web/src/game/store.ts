@@ -9,6 +9,8 @@ import {
   type PlayerView,
 } from '@srm/game-core'
 import type { GameUpdate, RoomSettings, RoomView } from '@srm/protocol'
+import { startCutin } from '../fx/events'
+import { useFx } from '../fx/store'
 import {
   createOnlineClient,
   loadLastRoom,
@@ -104,6 +106,27 @@ function saveSettings(settings: SoloSettings): void {
   }
 }
 
+/** まだ誰も出していない(始まったばかりの)対戦か。途中から入ったときは開始の演出を出さない */
+function isFreshGame(view: PlayerView): boolean {
+  return view.phase !== 'ended' && !view.log.some((e) => e.type === 'PLACED' || e.type === 'PASSED')
+}
+
+const START_SHOWN_KEY = 'srm:startShown'
+
+/**
+ * オンライン対戦の開始の演出を、この対戦でまだ出していなければ出したことにして true を返す。
+ * 再読み込み・再接続で最初の手より前に入り直しても、もう一度出さないよう sessionStorage に残す。
+ */
+function claimStartCutin(matchId: string): boolean {
+  try {
+    if (sessionStorage.getItem(START_SHOWN_KEY) === matchId) return false
+    sessionStorage.setItem(START_SHOWN_KEY, matchId)
+  } catch {
+    // 保存できなくても演出は出す(入り直したときにもう一度出るだけ)
+  }
+  return true
+}
+
 function namesOfView(view: PlayerView): Map<string, string> {
   return new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
 }
@@ -139,6 +162,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const toast = toastForEvent(event, nameOf, youId)
       if (toast) pushToast(toast.tone, toast.message)
     }
+    useFx.getState().emit(events, nameOf, youId)
   }
 
   const tick = () => {
@@ -240,6 +264,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       screen,
       ...(startedNewGame ? { gameId: s.gameId + 1, view: null, timer: null, toasts: [] } : {}),
     })
+    if (startedNewGame) useFx.getState().clear()
   }
 
   const onGame = (update: GameUpdate) => {
@@ -262,6 +287,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
     // 入室・再接続した直後は、過去の出来事を通知し直さない
     if (previous) {
       announce(update.view.log.slice(previous.log.length), namesOfView(update.view), update.view.you.id)
+    } else if (isFreshGame(update.view) && claimStartCutin(update.matchId)) {
+      useFx.getState().push(startCutin(update.view.seatOrder.length))
     }
     startTicker()
   }
@@ -299,6 +326,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     startSolo(settings) {
       stopClock()
+      useFx.getState().clear()
       saveSettings(settings)
       const game = createSoloGame(settings)
       set((s) => ({
@@ -314,6 +342,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
         reserveLeftMs: TIMER.reserveMs,
         now: Date.now(),
       }))
+      useFx.getState().push(startCutin(get().view?.seatOrder.length ?? settings.cpuCount + 1))
       startTicker()
       syncSolo()
     },
@@ -324,11 +353,13 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     leaveSolo() {
       stopClock()
+      useFx.getState().clear()
       set({ screen: 'title', game: null, view: null, toasts: [], timer: null })
     },
 
     async joinRoom(playerName, roomName) {
       stopClock()
+      useFx.getState().clear()
       const settings = { ...get().settings, name: playerName }
       saveSettings(settings)
       set({ mode: 'online', busy: true, settings, game: null, view: null, room: null, timer: null, toasts: [] })
@@ -360,6 +391,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     async leaveRoom() {
       stopClock()
+      useFx.getState().clear()
       saveLastRoom(null)
       set({ busy: true })
       await online().leave()

@@ -1,6 +1,6 @@
 import { LayoutGroup } from 'motion/react'
-import { useEffect, useMemo, useState } from 'react'
-import type { CardId } from '@srm/game-core'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CardId, Cell } from '@srm/game-core'
 import { Badge } from '../components/Badge'
 import { Board } from '../components/Board'
 import { Button } from '../components/Button'
@@ -14,9 +14,12 @@ import { ResultDialog } from '../components/ResultDialog'
 import { RulesDialog } from '../components/RulesDialog'
 import { TimerBar } from '../components/TimerBar'
 import { Toasts } from '../components/Toasts'
-import { selectionMode, viewDecisionKey } from '../game/selection'
+import { CutinLayer } from '../components/fx/CutinLayer'
+import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
+import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
-import { RotateIcon } from '../ui/icons'
+import { cx } from '../ui/cx'
+import { RotateIcon, SparkleIcon } from '../ui/icons'
 import { directionLabel } from '../ui/labels'
 
 /**
@@ -35,6 +38,8 @@ export function GameScreen() {
   const showLobby = useGameStore((s) => s.showLobby)
 
   const [selected, setSelected] = useState<CardId[]>([])
+  /** ジョーカーを置く位置として選んだマス(一緒に出すカードを選ぶとき) */
+  const [jokerCell, setJokerCell] = useState<Cell | null>(null)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [leaveOpen, setLeaveOpen] = useState(false)
   const [resultOpen, setResultOpen] = useState(true)
@@ -42,6 +47,7 @@ export function GameScreen() {
   const key = view ? viewDecisionKey(view) : ''
   useEffect(() => {
     setSelected([])
+    setJokerCell(null)
   }, [key])
 
   const nameOf = useMemo(() => {
@@ -49,6 +55,32 @@ export function GameScreen() {
     const names = new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
     return (id: string) => (id === view.you.id ? 'あなた' : (names.get(id) ?? id))
   }, [view])
+
+  const fxLevel = useFx((s) => s.level)
+  const setFxLevel = useFx((s) => s.setLevel)
+  const shake = useFx((s) => s.shake)
+  // 演出が流れ終わってから結果を出す(GAME SET のカットインと重ねない)
+  const fxIdle = useFx((s) => s.current === null && s.queue.length === 0)
+  const boardRef = useRef<HTMLElement>(null)
+
+  // Qボンバーなどで場を揺らす。Web Animations の transform なので React の再描画は起きない
+  useEffect(() => {
+    const el = boardRef.current
+    if (!shake || !el || typeof el.animate !== 'function') return
+    const a = shake.strength === 2 ? 7 : 4
+    const animation = el.animate(
+      [
+        { transform: 'translate(0, 0)' },
+        { transform: `translate(${-a}px, ${a / 2}px)` },
+        { transform: `translate(${a}px, ${-a / 2}px)` },
+        { transform: `translate(${-a / 2}px, ${a / 2}px)` },
+        { transform: `translate(${a / 2}px, 0)` },
+        { transform: 'translate(0, 0)' },
+      ],
+      { duration: shake.strength === 2 ? 480 : 320, easing: 'ease-out' },
+    )
+    return () => animation.cancel()
+  }, [shake])
 
   if (!view) {
     return (
@@ -71,6 +103,7 @@ export function GameScreen() {
 
   const toggle = (id: CardId) => {
     if (mode_.type === 'none') return
+    setJokerCell(null)
     setSelected((current) => {
       if (current.includes(id)) return current.filter((x) => x !== id)
       if (mode_.type === 'give') return current.length >= mode_.count ? current : [...current, id]
@@ -78,13 +111,22 @@ export function GameScreen() {
     })
   }
 
-  const selectedCard = selected[0]
-  const highlight =
-    mode_.type === 'turn' &&
-    selectedCard !== undefined &&
-    view.legalActions.some((a) => a.type === 'PLACE' && a.card === selectedCard)
-      ? selectedCard
-      : null
+  /** ダブルクリック・上スワイプ。確かめが要る手は、選択して案内を出すだけにする */
+  const playNow = (id: CardId) => {
+    const action = quickAction(view, mode_, id)
+    if (action) {
+      act(action)
+      return
+    }
+    setJokerCell(null)
+    setSelected([id])
+  }
+
+  const marks = boardMarks(view, mode_, selected, jokerCell)
+  const pressMark = (mark: BoardMark) => {
+    if (mark.action) act(mark.action)
+    else setJokerCell(mark.cell)
+  }
 
   const setup = view.pending?.type === 'giveSevens'
   const turnText =
@@ -135,6 +177,17 @@ export function GameScreen() {
             {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
           </div>
           <div className="flex items-center gap-1">
+            <Button
+              variant="subtle"
+              size="sm"
+              aria-label={`演出: ${FX_LEVEL_LABEL[fxLevel]}(押すと${FX_LEVEL_LABEL[NEXT_FX_LEVEL[fxLevel]]}に切り替え)`}
+              onClick={() => setFxLevel(NEXT_FX_LEVEL[fxLevel])}
+              className="px-2 sm:px-3"
+            >
+              <SparkleIcon className={cx('h-4 w-4', fxLevel === 'off' ? 'text-slate-400' : 'text-primary-500')} />
+              <span className="hidden sm:inline">演出:</span>
+              {FX_LEVEL_LABEL[fxLevel]}
+            </Button>
             <Button variant="subtle" size="sm" onClick={() => setRulesOpen(true)}>
               ルール
             </Button>
@@ -165,18 +218,25 @@ export function GameScreen() {
               </div>
             </section>
 
-            <section aria-label="場" className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:p-5">
+            <section
+              ref={boardRef}
+              aria-label="場"
+              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:p-5"
+            >
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-slate-900">場</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge>
-                    <RotateIcon direction={view.direction} className="mr-1 h-3.5 w-3.5" />
+                    {/* 向きが変わるたびに回して見せる */}
+                    <span key={view.direction} className="fx-spin-in mr-1">
+                      <RotateIcon direction={view.direction} className="h-3.5 w-3.5" />
+                    </span>
                     {directionLabel(view.direction)}
                   </Badge>
                   {view.jokerRemoved && <Badge>ジョーカー除外済み</Badge>}
                 </div>
               </div>
-              <Board board={view.board} highlight={highlight} />
+              <Board board={view.board} marks={marks} onMark={pressMark} />
             </section>
 
             <details className="rounded-xl border border-slate-200 bg-white shadow-sm lg:hidden">
@@ -195,6 +255,7 @@ export function GameScreen() {
         </div>
 
         <div className="sticky bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+          {mode_.type !== 'none' && <div aria-hidden="true" className="fx-turn-line" />}
           <div className="mx-auto max-w-6xl space-y-2 px-4 py-2 md:space-y-3 md:py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
               <p aria-live="polite" className="text-sm font-semibold text-slate-900">
@@ -218,6 +279,8 @@ export function GameScreen() {
               view={view}
               mode={mode_}
               selected={selected}
+              jokerCell={jokerCell}
+              onJokerCell={setJokerCell}
               decisionKey={key}
               act={act}
               nameOf={nameOf}
@@ -225,11 +288,12 @@ export function GameScreen() {
               endDescription={online && !isHost ? '部屋主が次の対戦を始めるのを待っています。' : undefined}
               endActions={endActions}
             />
-            <Hand view={view} mode={mode_} selected={selected} onToggle={toggle} />
+            <Hand view={view} mode={mode_} selected={selected} onToggle={toggle} onPlay={playNow} />
           </div>
         </div>
       </LayoutGroup>
 
+      <CutinLayer />
       <Toasts />
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
       <Dialog
@@ -255,7 +319,7 @@ export function GameScreen() {
         </p>
       </Dialog>
       <ResultDialog
-        open={view.phase === 'ended' && resultOpen}
+        open={view.phase === 'ended' && resultOpen && fxIdle}
         view={view}
         onClose={() => setResultOpen(false)}
         actions={endActions}

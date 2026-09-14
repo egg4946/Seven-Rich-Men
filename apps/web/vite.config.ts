@@ -13,6 +13,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // VS Code のポート転送(Dev Tunnels)で遠隔の人に公開したときの URL を許可する。vite preview にも引き継がれる
+    allowedHosts: ['.devtunnels.ms'],
     // 開発中は、オンライン対戦のサーバー(apps/server)へ中継する。
     // スマホから LAN 経由(http://<PCのIP>:5173)で開いても、同じ経路でサーバーにつながる
     proxy: {

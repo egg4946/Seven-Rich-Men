@@ -66,10 +66,463 @@
   }
 }
 
+/* ------------------------------------------------------------------
+ * 演出(.superdesign/design-system.md §3 Motion)
+ * スマホで重くならないよう、動かすのは transform と opacity だけにする。
+ * filter・box-shadow・width など、再描画やレイアウト計算が起きるプロパティは動かさない。
+ * 影やグラデーションは静止した見た目にだけ使う(一度描けば、動かしても描き直されない)。
+ * ------------------------------------------------------------------ */
+
+.fx-tone-primary { --fx-a: #2b70ef; --fx-b: #13318d; --fx-glow: rgb(43 112 239 / 0.35); }
+.fx-tone-sky { --fx-a: #0ea5e9; --fx-b: #075985; --fx-glow: rgb(14 165 233 / 0.35); }
+.fx-tone-amber { --fx-a: #f59e0b; --fx-b: #92400e; --fx-glow: rgb(245 158 11 / 0.35); }
+.fx-tone-red { --fx-a: #ef4444; --fx-b: #7f1d1d; --fx-glow: rgb(239 68 68 / 0.35); }
+.fx-tone-emerald { --fx-a: #10b981; --fx-b: #065f46; --fx-glow: rgb(16 185 129 / 0.35); }
+.fx-tone-violet { --fx-a: #8b5cf6; --fx-b: #4c1d95; --fx-glow: rgb(139 92 246 / 0.35); }
+.fx-tone-slate { --fx-a: #64748b; --fx-b: #0f172a; --fx-glow: rgb(15 23 42 / 0.4); }
+.fx-tone-gold { --fx-a: #f59e0b; --fx-b: #b45309; --fx-c: #fde68a; --fx-glow: rgb(251 191 36 / 0.45); }
+
+/* --- カットイン(効果の発動) --- */
+
+.fx-cutin {
+  --fx-band-h: clamp(120px, 32vw, 180px);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.fx-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, var(--fx-glow), transparent 70%);
+  animation: fx-flash var(--fx-dur) ease-out both;
+}
+
+.fx-band {
+  position: absolute;
+  left: -5%;
+  right: -5%;
+  top: calc(50% - var(--fx-band-h) / 2);
+  height: var(--fx-band-h);
+  overflow: hidden;
+  background: linear-gradient(
+    100deg,
+    var(--fx-b) 0%,
+    var(--fx-a) 35%,
+    var(--fx-c, var(--fx-a)) 50%,
+    var(--fx-a) 65%,
+    var(--fx-b) 100%
+  );
+  border-block: 3px solid rgb(255 255 255 / 0.85);
+  box-shadow: 0 10px 30px rgb(15 23 42 / 0.25);
+  animation: fx-band var(--fx-dur) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.fx-band-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 35%, rgb(255 255 255 / 0.55) 50%, transparent 65%);
+  animation: fx-shine var(--fx-dur) ease-out both;
+}
+
+.fx-text {
+  position: relative;
+  text-align: center;
+  color: #fff;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  animation: fx-text var(--fx-dur) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.fx-by {
+  font-size: clamp(0.8125rem, 3.4vw, 1rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.fx-title {
+  font-size: clamp(2.5rem, 12vw, 4.75rem);
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow:
+    0 3px 0 var(--fx-b),
+    0 8px 20px rgb(0 0 0 / 0.3);
+}
+
+.fx-sub {
+  margin-top: 0.25rem;
+  font-size: clamp(0.8125rem, 3.6vw, 1.125rem);
+  font-weight: 700;
+}
+
+.fx-slash {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  background: linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent);
+  box-shadow: 0 0 14px 3px var(--fx-a);
+  transform-origin: left center;
+  animation: fx-slash var(--fx-dur) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.fx-spin {
+  --fx-spin-size: min(55vw, 280px);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--fx-spin-size);
+  height: var(--fx-spin-size);
+  margin: calc(var(--fx-spin-size) / -2) 0 0 calc(var(--fx-spin-size) / -2);
+  color: #fff;
+  stroke-width: 2.5;
+  animation: fx-spin var(--fx-dur) cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.fx-shock {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40vmin;
+  height: 40vmin;
+  margin: -20vmin 0 0 -20vmin;
+  border-radius: 9999px;
+  border: 6px solid var(--fx-a);
+  animation: fx-shock var(--fx-dur) cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+.fx-shock-late {
+  border-color: #fff;
+  animation-name: fx-shock-late;
+}
+
+@keyframes fx-flash {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  45%, 100% { opacity: 0; }
+}
+
+@keyframes fx-band {
+  0% { transform: skewY(-4deg) scale(0, 0.08); opacity: 0; }
+  12% { transform: skewY(-4deg) scale(1, 0.08); opacity: 1; }
+  22% { transform: skewY(-4deg) scale(1, 1); }
+  82% { transform: skewY(-4deg) scale(1, 1); opacity: 1; }
+  100% { transform: skewY(-4deg) scale(1, 0); opacity: 0; }
+}
+
+@keyframes fx-shine {
+  0%, 20% { transform: translateX(-100%); }
+  60%, 100% { transform: translateX(100%); }
+}
+
+@keyframes fx-text {
+  0%, 12% { transform: translateX(60vw) skewX(-14deg); opacity: 0; }
+  26% { transform: translateX(-2vw) skewX(-10deg); opacity: 1; }
+  34% { transform: translateX(0) skewX(-8deg); }
+  80% { transform: translateX(1.5vw) skewX(-8deg); opacity: 1; }
+  100% { transform: translateX(-60vw) skewX(-14deg); opacity: 0; }
+}
+
+@keyframes fx-slash {
+  0%, 6% { transform: rotate(-20deg) scaleX(0); opacity: 1; }
+  18% { transform: rotate(-20deg) scaleX(1); opacity: 1; }
+  40%, 100% { transform: rotate(-20deg) scaleX(1); opacity: 0; }
+}
+
+@keyframes fx-spin {
+  0%, 10% { transform: rotate(-200deg) scale(0.4); opacity: 0; }
+  30% { opacity: 0.35; }
+  75% { transform: rotate(0) scale(1); opacity: 0.35; }
+  100% { transform: rotate(40deg) scale(1.1); opacity: 0; }
+}
+
+@keyframes fx-shock {
+  0% { transform: scale(0.1); opacity: 1; }
+  45%, 100% { transform: scale(2.8); opacity: 0; }
+}
+
+@keyframes fx-shock-late {
+  0%, 12% { transform: scale(0.1); opacity: 0; }
+  14% { opacity: 1; }
+  60%, 100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* --- 小さな知らせ(あなたの番・スキップ) --- */
+
+.fx-banner {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  min-width: 12rem;
+  padding: 0.5rem 1.5rem;
+  border-radius: 9999px;
+  text-align: center;
+  color: #fff;
+  line-height: 1.3;
+  background: linear-gradient(100deg, var(--fx-b), var(--fx-a) 50%, var(--fx-b));
+  border: 2px solid rgb(255 255 255 / 0.8);
+  box-shadow: 0 10px 25px rgb(15 23 42 / 0.25);
+  animation: fx-banner var(--fx-dur) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.fx-banner-title {
+  font-size: 1.375rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.fx-banner-sub {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+@keyframes fx-banner {
+  0% { transform: translate(-50%, -24px) scale(0.7); opacity: 0; }
+  16% { transform: translate(-50%, 0) scale(1.06); opacity: 1; }
+  24% { transform: translate(-50%, 0) scale(1); }
+  78% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -16px) scale(0.96); opacity: 0; }
+}
+
+/* --- 粒(火花・紙吹雪) --- */
+
+.fx-spark,
+.fx-confetti {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation-fill-mode: both;
+}
+
+.fx-spark {
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 9999px;
+  background: #fde68a;
+  box-shadow: 0 0 8px 2px rgb(251 191 36 / 0.8);
+  animation-name: fx-spark;
+  animation-duration: 750ms;
+  animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+}
+
+.fx-confetti {
+  width: 7px;
+  height: 11px;
+  margin: -5px 0 0 -3px;
+  border-radius: 2px;
+  animation-name: fx-confetti;
+  animation-duration: 1600ms;
+}
+
+@keyframes fx-spark {
+  0% { transform: translate(0, 0) scale(1.4); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+}
+
+@keyframes fx-confetti {
+  0% {
+    transform: translate(0, 0) rotate(0) scale(0.4);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+  }
+  30% {
+    transform: translate(var(--dx), var(--dy)) rotate(calc(var(--rot) * 0.3)) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  }
+  100% {
+    transform: translate(calc(var(--dx) * 1.3), calc(var(--dy) + 60vh)) rotate(var(--rot));
+    opacity: 0;
+  }
+}
+
+/* --- 場・席・手番 --- */
+
+/* カードが場に着地したときの波紋 */
+.fx-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 0.5rem;
+  border: 2px solid var(--color-primary-500);
+  pointer-events: none;
+  animation: fx-ring 550ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+
+.fx-ring-effect {
+  border-width: 3px;
+  border-color: #f59e0b;
+}
+
+@keyframes fx-ring {
+  0% { transform: scale(0.7); opacity: 1; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+
+/* 相手の席に一瞬出る吹き出し(パス・出したカードなど) */
+.fx-pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  padding: 0.125rem 0.875rem;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, var(--fx-a), var(--fx-b));
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 800;
+  line-height: 1.6;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.2);
+  pointer-events: none;
+  animation: fx-pop 1100ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-pop {
+  0% { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  15% { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+  25% { transform: translate(-50%, -50%) scale(1); }
+  70% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -110%) scale(1); opacity: 0; }
+}
+
+.fx-stamp {
+  animation: fx-stamp 380ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-stamp {
+  0% { transform: scale(2.2) rotate(-12deg); opacity: 0; }
+  60% { transform: scale(0.92) rotate(0); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.fx-bump {
+  animation: fx-bump 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-bump {
+  0% { transform: scale(1.6); }
+  100% { transform: scale(1); }
+}
+
+/* 手番の席の枠。ループするのは opacity だけ */
+.fx-turn-ring {
+  animation: fx-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes fx-breathe {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+/* 自分が答える番のあいだ、操作パネルの上端を光が流れる */
+.fx-turn-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 3px;
+  overflow: hidden;
+  background: var(--color-primary-200);
+  pointer-events: none;
+}
+
+.fx-turn-line::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--color-primary-500), transparent);
+  animation: fx-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes fx-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+.fx-heartbeat {
+  display: inline-block;
+  animation: fx-heartbeat 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-heartbeat {
+  0% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+.fx-spin-in {
+  display: inline-flex;
+  animation: fx-spin-in 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-spin-in {
+  0% { transform: rotate(-360deg) scale(0.5); }
+  100% { transform: rotate(0) scale(1); }
+}
+
+/* --- 結果・タイトル --- */
+
+.fx-rise {
+  animation: fx-rise 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-rise {
+  0% { transform: translateY(16px) scale(0.97); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+
+.fx-gold-text {
+  background: linear-gradient(180deg, #fbbf24, #b45309);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fx-hero {
+  animation: fx-float 4s ease-in-out 1s infinite;
+}
+
+.fx-hero-card {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 3.5rem;
+  height: 5rem;
+  margin-left: -1.75rem;
+  transform-origin: 50% 140%;
+  animation: fx-fan 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fx-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes fx-fan {
+  0% { transform: translateY(40px) rotate(0) scale(0.8); opacity: 0; }
+  100% { transform: translateX(calc(var(--i) * 14px)) rotate(calc(var(--i) * 13deg)); opacity: 1; }
+}
+
+/* 演出オフでは動きを止める。OS の「動きを減らす」設定では、自分で演出を選ぶまでオフになる(fx/store.ts)。
+   data-fx が付く前(スクリプトの読み込み前)も OS の設定に従う */
+:root[data-fx='off'] *,
+:root[data-fx='off'] *::before,
+:root[data-fx='off'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-fx]) *,
+  :root:not([data-fx]) *::before,
+  :root:not([data-fx]) *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

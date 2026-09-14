@@ -1,16 +1,20 @@
 import { useState, type ReactNode } from 'react'
-import { JOKER, cardId, rankOf, removeCards, type Action, type CardId, type PlayerView } from '@srm/game-core'
-import type { SelectionMode } from '../game/selection'
+import { JOKER, cardId, rankOf, removeCards, type Action, type CardId, type Cell, type PlayerView } from '@srm/game-core'
+import {
+  jokerBlockedCards,
+  jokerFinishes,
+  jokerTargets,
+  leavesOnlyJoker,
+  type JokerUse,
+  type SelectionMode,
+} from '../game/selection'
 import { cx } from '../ui/cx'
 import { AlertIcon } from '../ui/icons'
 import { RANKS, cardName, rankLabel, type NameOf } from '../ui/labels'
 import { Button } from './Button'
 
-type JokerAction = Extract<Action, { type: 'USE_JOKER' }>
-
-function leavesOnlyJoker(hand: CardId[]): boolean {
-  return hand.length === 1 && hand[0] === JOKER
-}
+/** ボタン以外の出し方の案内 */
+const QUICK_HINT = 'ダブルクリックか上へスワイプでも出せます。'
 
 function Panel({
   title,
@@ -63,6 +67,8 @@ export function DecisionPanel({
   view,
   mode,
   selected,
+  jokerCell,
+  onJokerCell,
   decisionKey,
   act,
   nameOf,
@@ -73,6 +79,9 @@ export function DecisionPanel({
   view: PlayerView
   mode: SelectionMode
   selected: CardId[]
+  /** ジョーカーを置く位置として選んだマス */
+  jokerCell: Cell | null
+  onJokerCell: (cell: Cell | null) => void
   decisionKey: string
   act: (action: Action) => void
   nameOf: NameOf
@@ -124,7 +133,10 @@ export function DecisionPanel({
         return (
           <Panel
             title="10捨て"
-            description="手札からもう1枚選んで場に出します。隣が埋まっていなくても置けます(そのカードの効果は発動しません)。"
+            description={`手札からもう1枚選んで場に出します。隣が埋まっていなくても置けます(そのカードの効果は発動しません)。${
+              // ジョーカーは警告を読んでからボタンで出すので、場のマス・ダブルクリック・スワイプの案内は出さない
+              card === JOKER ? '' : `選んだカードは場のマスを押しても出せます。${QUICK_HINT}`
+            }`}
             warning={
               card === JOKER
                 ? 'ジョーカーはゲームから除外され、砂嵐・3スペでも回収できません'
@@ -206,7 +218,18 @@ export function DecisionPanel({
     }
   }
 
-  if (mode.type === 'turn') return <TurnActions key={decisionKey} view={view} selected={selected} act={act} />
+  if (mode.type === 'turn') {
+    return (
+      <TurnActions
+        key={decisionKey}
+        view={view}
+        selected={selected}
+        jokerCell={jokerCell}
+        onJokerCell={onJokerCell}
+        act={act}
+      />
+    )
+  }
 
   switch (view.you.status) {
     case 'finished':
@@ -220,27 +243,44 @@ export function DecisionPanel({
   }
 }
 
-function TurnActions({ view, selected, act }: { view: PlayerView; selected: CardId[]; act: (action: Action) => void }) {
+function TurnActions({
+  view,
+  selected,
+  jokerCell,
+  onJokerCell,
+  act,
+}: {
+  view: PlayerView
+  selected: CardId[]
+  jokerCell: Cell | null
+  onJokerCell: (cell: Cell | null) => void
+  act: (action: Action) => void
+}) {
   const [confirmingPass, setConfirmingPass] = useState(false)
   const me = view.you.id
   const legal = view.legalActions
   const card = selected[0]
   const place = legal.find((a) => a.type === 'PLACE' && a.card === card)
-  const jokerUses = card === JOKER ? legal.filter((a): a is JokerAction => a.type === 'USE_JOKER') : []
+  const targets = card === JOKER ? jokerTargets(view) : new Map<CardId, JokerUse[]>()
+  const blocked = card === JOKER ? jokerBlockedCards(view) : []
   const declares = legal.filter((a) => a.type === 'DECLARE')
   const lastPass = view.you.passesLeft === 0
 
-  let description = 'カードを選んで出すか、パスしてください。'
+  let description = `カードを選んで出すか、パスしてください。${QUICK_HINT}`
   let warning: string | undefined
   if (card === JOKER) {
     description =
-      jokerUses.length > 0
-        ? 'ジョーカーを置く位置を選んでください。そのマスのカードを持っている人が、そのカードを場に出します。'
+      targets.size > 0
+        ? 'ジョーカーを置く位置を、場のマスかこの一覧から選んでください。そのマスのカードを持っている人が、そのカードを場に出します。'
         : '今はジョーカーを置ける位置がありません。'
+    if (blocked.length > 0) {
+      description += `${blocked.map(cardName).join('・')} のマスは自分の手札なので置けません(普通に出せます)。`
+    }
   } else if (card !== undefined && !place) {
     description = `${cardName(card)} は今は出せません(7から繋がっている列の端にしか出せません)。`
-  } else if (card !== undefined && leavesOnlyJoker(removeCards(view.you.hand, [card]))) {
-    warning = '出すとジョーカーだけが残り、強制敗北します'
+  } else if (card !== undefined) {
+    description = '場のマスを押しても出せます。'
+    if (leavesOnlyJoker(removeCards(view.you.hand, [card]))) warning = '出すとジョーカーだけが残り、強制敗北します'
   }
   if (declares.length > 0) {
     description += ' 宣言すると次の手番が飛びます(パスは減りません)。'
@@ -283,43 +323,62 @@ function TurnActions({ view, selected, act }: { view: PlayerView; selected: Card
         </>
       }
     >
-      {jokerUses.length > 0 && <JokerTargets view={view} uses={jokerUses} act={act} />}
+      {targets.size > 0 && (
+        <JokerTargets view={view} targets={targets} jokerCell={jokerCell} onJokerCell={onJokerCell} act={act} />
+      )}
     </Panel>
   )
 }
 
-function JokerTargets({ view, uses, act }: { view: PlayerView; uses: JokerAction[]; act: (action: Action) => void }) {
-  const groups = new Map<CardId, JokerAction[]>()
-  for (const use of uses) {
-    const target = cardId(use.cell.suit, use.cell.rank)
-    groups.set(target, [...(groups.get(target) ?? []), use])
-  }
+function JokerTargets({
+  view,
+  targets,
+  jokerCell,
+  onJokerCell,
+  act,
+}: {
+  view: PlayerView
+  targets: Map<CardId, JokerUse[]>
+  jokerCell: Cell | null
+  onJokerCell: (cell: Cell | null) => void
+  act: (action: Action) => void
+}) {
+  // 場で位置を選んだら、その位置の選択肢だけに絞る
+  const chosenId = jokerCell ? cardId(jokerCell.suit, jokerCell.rank) : null
+  const chosen = chosenId ? targets.get(chosenId) : undefined
+  const groups: [CardId, JokerUse[]][] = chosenId && chosen ? [[chosenId, chosen]] : [...targets]
 
   return (
-    <ul className="grid gap-2 sm:grid-cols-2">
-      {[...groups].map(([target, list]) => (
-        <li key={target} className="rounded-lg border border-slate-200 px-3 py-2">
-          <p className="text-sm font-medium text-slate-900">{cardName(target)} の位置</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {list.map((use) => {
-              const rest = removeCards(view.you.hand, use.withCard ? [JOKER, use.withCard] : [JOKER])
-              const forbidden = rest.length === 0
-              return (
-                <Button
-                  key={use.withCard ?? 'alone'}
-                  size="sm"
-                  variant={forbidden ? 'danger' : use.withCard ? 'secondary' : 'primary'}
-                  onClick={() => act(use)}
-                >
-                  {use.withCard ? `${cardName(use.withCard)} も一緒に出す` : 'ジョーカーだけ置く'}
-                  {forbidden ? '(禁止アガリ)' : ''}
-                </Button>
-              )
-            })}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {groups.map(([target, list]) => (
+          <li key={target} className="rounded-lg border border-slate-200 px-3 py-2">
+            <p className="text-sm font-medium text-slate-900">{cardName(target)} の位置</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {list.map((use) => {
+                const forbidden = jokerFinishes(view.you.hand, use)
+                return (
+                  <Button
+                    key={use.withCard ?? 'alone'}
+                    size="sm"
+                    variant={forbidden ? 'danger' : use.withCard ? 'secondary' : 'primary'}
+                    onClick={() => act(use)}
+                  >
+                    {use.withCard ? `${cardName(use.withCard)} も一緒に出す` : 'ジョーカーだけ置く'}
+                    {forbidden ? '(禁止アガリ)' : ''}
+                  </Button>
+                )
+              })}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {chosen && (
+        <Button className="mt-2" variant="subtle" size="sm" onClick={() => onJokerCell(null)}>
+          ほかの位置を選ぶ
+        </Button>
+      )}
+    </>
   )
 }
 

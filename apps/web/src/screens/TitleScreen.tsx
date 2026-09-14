@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import type { CpuLevel } from '@srm/game-ai'
 import { LIMITS } from '@srm/protocol'
 import { Button } from '../components/Button'
@@ -6,6 +6,16 @@ import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
 import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
+import { cx } from '../ui/cx'
+
+/** タイトルで扇状に広げるカード(4枚の7とジョーカー) */
+const HERO_CARDS = [
+  { rank: '7', suit: '♠', color: 'text-slate-900' },
+  { rank: '7', suit: '♥', color: 'text-red-600' },
+  { rank: 'JK', suit: '★', color: 'text-primary-600' },
+  { rank: '7', suit: '♦', color: 'text-red-600' },
+  { rank: '7', suit: '♣', color: 'text-slate-900' },
+]
 
 const inputClass =
   'h-11 w-full rounded-lg border border-slate-300 px-3 text-base text-slate-900 caret-primary-500 transition-colors placeholder:text-slate-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 focus:outline-none'
@@ -35,6 +45,22 @@ export function TitleScreen() {
   return (
     <main className="min-h-dvh bg-gray-50 px-4 py-10 md:py-16">
       <div className="mx-auto max-w-lg">
+        <div aria-hidden="true" className="fx-hero relative mb-6 h-28 w-56">
+          {HERO_CARDS.map((card, i) => (
+            <span
+              key={card.suit}
+              className={cx(
+                'fx-hero-card flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-1.5 leading-none shadow-md',
+                card.color,
+              )}
+              style={{ '--i': `${i - 2}`, animationDelay: `${i * 80}ms` } as CSSProperties}
+            >
+              <span className="text-base leading-none font-semibold">{card.rank}</span>
+              <span className="self-center text-2xl leading-none">{card.suit}</span>
+              <span />
+            </span>
+          ))}
+        </div>
         <p className="text-sm font-medium text-primary-600">七並べ × 大富豪</p>
         <h1 className="mt-1 text-2xl font-bold text-slate-900 md:text-3xl">Seven Rich Men</h1>
         <p className="mt-3 text-base text-body">
