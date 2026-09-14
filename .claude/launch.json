@@ -12,6 +12,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@srm/server", "dev"],
       "port": 8787
+    },
+    {
+      "name": "production",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@srm/server", "start"],
+      "port": 8787
     }
   ]
 }

@@ -9,10 +9,13 @@ import {
   type ServerToClientEvents,
 } from '@srm/protocol'
 import { RoomManager, type ManagerOptions } from './rooms.js'
+import { serveStatic } from './static.js'
 
 export interface AppOptions extends ManagerOptions {
   /** 別のオリジンから接続を許可する URL(開発中は Vite のプロキシ経由なので空でよい) */
   corsOrigins: string[]
+  /** ビルド済みの画面のフォルダー。指定すると、同じ URL で画面も配る(公開環境用) */
+  webDir?: string | null
 }
 
 function invalid(error: string): { ok: false; code: 'invalid'; error: string } {
@@ -40,7 +43,17 @@ export function createAppServer(options: AppOptions) {
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end('ok')
       return
     }
-    res.writeHead(404).end()
+    // /socket.io/ への接続は Socket.IO が先に受け取るので、ここには来ない
+    const { webDir } = options
+    if (!webDir) {
+      res.writeHead(404).end()
+      return
+    }
+    serveStatic(webDir, req, res).catch((error: unknown) => {
+      console.error('[server] 画面の配信中にエラー', error)
+      if (res.headersSent) res.destroy()
+      else res.writeHead(500).end()
+    })
   })
 
   const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {

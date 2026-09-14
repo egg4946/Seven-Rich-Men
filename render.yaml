@@ -1,0 +1,16 @@
+# Render の Blueprint(docs/DEPLOY.md)。
+# 1つの Web サービスで、ビルドした画面(apps/web/dist)とオンライン対戦のサーバーを同じ URL から配る。
+services:
+  - type: web
+    name: seven-rich-men
+    runtime: node
+    plan: free
+    # 日本から一番近いリージョン
+    region: singapore
+    branch: main
+    autoDeployTrigger: commit
+    # pnpm は Render に入っていないことがあるので、バージョンを固定して npx で使う。
+    # NODE_ENV=production にすると Vite などの開発用パッケージが入らずビルドできないので設定しない
+    buildCommand: npx --yes pnpm@11.25.0 install --frozen-lockfile && npx --yes pnpm@11.25.0 --filter @srm/web build
+    startCommand: cd apps/server && node --import tsx src/index.ts
+    healthCheckPath: /healthz
