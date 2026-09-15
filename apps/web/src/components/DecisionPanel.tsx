@@ -18,12 +18,15 @@ const QUICK_HINT = 'ダブルクリックか上へスワイプでも出せます
 
 function Panel({
   title,
+  sameAsStatus = false,
   description,
   warning,
   actions,
   children,
 }: {
   title: string
+  /** 見出しが、操作パネルの上の行(手番の表示)と同じ。スマホでは高さを節約するため見せない */
+  sameAsStatus?: boolean
   description?: ReactNode
   warning?: string
   actions?: ReactNode
@@ -34,8 +37,9 @@ function Panel({
       aria-label={title}
       className="rounded-xl border border-slate-200 bg-white px-3 py-2 leading-normal md:px-4 md:py-3"
     >
-      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-      {description && <p className="mt-0.5 text-sm text-body">{description}</p>}
+      <h2 className={cx('text-sm font-semibold text-slate-900', sameAsStatus && 'max-md:sr-only')}>{title}</h2>
+      {/* スマホでは説明を小さくして、操作パネルが場を覆わないようにする */}
+      {description && <p className="mt-0.5 text-xs text-body md:text-sm">{description}</p>}
       {warning && (
         <p
           role="alert"
@@ -105,6 +109,7 @@ export function DecisionPanel({
         return (
           <Panel
             title="7渡し"
+            sameAsStatus
             description={`${giveToName} に渡すカードを${mode.count}枚選んでください(${selected.length}/${mode.count})`}
             actions={
               <Button disabled={!ready} onClick={() => act({ type: 'GIVE_SEVENS', playerId: me, cards: selected })}>
@@ -289,6 +294,7 @@ function TurnActions({
   return (
     <Panel
       title="あなたの手番"
+      sameAsStatus
       description={description}
       warning={warning}
       actions={
@@ -300,7 +306,11 @@ function TurnActions({
           )}
           {declares.map((action) => (
             <Button key={action.type === 'DECLARE' ? action.effect : ''} variant="secondary" onClick={() => act(action)}>
-              {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? 'ろくろっくび(6を2枚公開)' : '救急車(9を2枚公開)'}
+              {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? 'ろくろっくび' : '救急車'}
+              {/* スマホではボタンを1行に収めるため、公開するカードは省く(説明は「ルール」にある) */}
+              <span className="max-md:hidden">
+                {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? '(6を2枚公開)' : '(9を2枚公開)'}
+              </span>
             </Button>
           ))}
           {confirmingPass ? (

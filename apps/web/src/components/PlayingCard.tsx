@@ -65,7 +65,8 @@ export function HandCard({
   const label = [cardName(id), revealed && '公開中', muted && '今は出せません'].filter(Boolean).join('、')
   const className = cx(
     'relative flex h-16 w-11 shrink-0 flex-col justify-between rounded-lg border bg-white p-1 text-left leading-none shadow-sm transition-colors md:h-20 md:w-14 md:p-1.5',
-    selected ? 'border-primary-500 ring-2 ring-primary-500' : 'border-slate-200',
+    // 手札を重ねて並べたときも、選んだカードは右隣より手前に出す
+    selected ? 'z-[5] border-primary-500 ring-2 ring-primary-500' : 'border-slate-200',
     onClick && 'hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
   )
   const appear = {
@@ -126,7 +127,8 @@ export function HandCard({
       {revealed && (
         <span
           aria-hidden="true"
-          className="absolute -top-2 right-0 rounded-full border border-slate-200 bg-white px-1 text-xxs leading-normal text-slate-700"
+          // 手札を重ねて並べたとき、右隣のカードに隠れないよう手前に出す
+          className="absolute -top-2 right-0 z-[6] rounded-full border border-slate-200 bg-white px-1 text-xxs leading-normal text-slate-700"
         >
           公開
         </span>

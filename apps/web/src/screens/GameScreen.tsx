@@ -170,8 +170,9 @@ export function GameScreen() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
+      {/* スマホでは画面の高さが足りないので、上の帯は固定せず、場と手札の表示に高さを回す */}
+      <header className="z-30 border-b border-slate-200 bg-white md:sticky md:top-0">
+        <div className="mx-auto flex h-12 max-w-6xl items-center justify-between gap-3 px-4 md:h-14">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
             {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
@@ -204,12 +205,14 @@ export function GameScreen() {
             </Button>
           </div>
         </div>
-        <ConnectionBanner />
+        <div className="hidden md:block">
+          <ConnectionBanner />
+        </div>
       </header>
 
       <LayoutGroup>
-        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
-          <main className="min-w-0 space-y-4">
+        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-2 sm:py-4 md:py-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
+          <main className="min-w-0 space-y-2 sm:space-y-4">
             <section aria-label="対戦相手" className="-mx-4 overflow-x-auto px-4 pb-1">
               <div className="flex gap-3">
                 {view.opponents.map((opponent) => (
@@ -221,9 +224,9 @@ export function GameScreen() {
             <section
               ref={boardRef}
               aria-label="場"
-              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:p-5"
+              className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3 md:p-5"
             >
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 sm:mb-2">
                 <h2 className="text-sm font-semibold text-slate-900">場</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge>
@@ -255,6 +258,10 @@ export function GameScreen() {
         </div>
 
         <div className="sticky bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+          {/* スマホでは上の帯が固定されないので、切断の知らせは操作パネルに出す */}
+          <div className="md:hidden">
+            <ConnectionBanner />
+          </div>
           {mode_.type !== 'none' && <div aria-hidden="true" className="fx-turn-line" />}
           <div className="mx-auto max-w-6xl space-y-2 px-4 py-2 md:space-y-3 md:py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">

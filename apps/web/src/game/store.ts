@@ -68,8 +68,10 @@ interface GameStore {
   startSolo: (settings: SoloSettings) => void
   rematch: () => void
   leaveSolo: () => void
-  /** 入室できなければエラーメッセージを返す */
+  /** 入室できなければエラーメッセージを返す(自分で接続をやめたときは null) */
   joinRoom: (playerName: string, roomName: string) => Promise<string | null>
+  /** サーバーの起動を待っている入室をやめる */
+  cancelJoin: () => void
   /** リロード前に入っていた部屋へ戻る(アプリ起動時に1回だけ) */
   resumeSession: () => void
   leaveRoom: () => Promise<void>
@@ -368,11 +370,17 @@ export const useGameStore = create<GameStore>()((set, get) => {
       set({ busy: false })
       if (!result.ok) {
         set({ mode: 'solo' })
-        return result.error
+        return result.code === 'cancelled' ? null : result.error
       }
       saveLastRoom(target)
       startTicker()
       return null
+    },
+
+    cancelJoin() {
+      // リロード後の入り直しをやめたときも、次のリロードでまた同じ部屋に入らないよう忘れる
+      saveLastRoom(null)
+      online().cancelJoin()
     },
 
     resumeSession() {

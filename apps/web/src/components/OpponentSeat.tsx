@@ -45,7 +45,10 @@ export function OpponentSeat({ opponent, isTurn }: { opponent: OpponentView; isT
           </dd>
         </div>
         <div className="flex gap-1">
-          <dt>パス残り</dt>
+          {/* スマホでは1行に収めて席を低くする */}
+          <dt>
+            パス<span className="max-sm:hidden">残り</span>
+          </dt>
           <dd className="font-semibold text-slate-900">{opponent.passesLeft}</dd>
         </div>
         {opponent.skips > 0 && (
