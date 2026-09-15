@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cardId, type GameEvent } from '@srm/game-core'
-import { cutinsFor, seatPopsFor } from './events'
+import { cardId, type GameEvent, type PlayerView } from '@srm/game-core'
+import { cutinsFor, seatPopsFor, sevensCutin } from './events'
 import { useFx } from './store'
 
 const YOU = 'you'
@@ -36,6 +36,23 @@ describe('cutinsFor', () => {
   it('1位が自分なら終了の演出を自分のものにする(紙吹雪)', () => {
     expect(cutinsFor([{ type: 'GAME_ENDED', ranking: [YOU, 'cpu1'] }], name, YOU)[0]?.mine).toBe(true)
     expect(cutinsFor([{ type: 'GAME_ENDED', ranking: ['cpu1', YOU] }], name, YOU)[0]?.mine).toBe(false)
+  })
+})
+
+describe('sevensCutin', () => {
+  const viewOf = (you: string) =>
+    ({
+      you: { id: you },
+      seatOrder: ['cpu1', YOU, 'cpu2'],
+      log: [{ type: 'SEVENS_PLACED', playerId: YOU, cards: [cardId('S', 7), cardId('H', 7)] }],
+    }) as unknown as PlayerView
+
+  it('7を出していれば、誰に何枚渡すのかを出す', () => {
+    expect(sevensCutin(viewOf(YOU), name)).toMatchObject({ kind: 'sevens', sub: '7を2枚出した → CPU2 に2枚渡す', mine: true })
+  })
+
+  it('7を出していなければ、7渡しの決まりだけを出す', () => {
+    expect(sevensCutin(viewOf('cpu1'), name)).toMatchObject({ sub: '7を出した人は、その枚数だけ次の人にカードを渡す', mine: false })
   })
 })
 

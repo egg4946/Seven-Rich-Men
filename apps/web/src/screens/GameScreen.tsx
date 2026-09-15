@@ -1,5 +1,5 @@
 import { LayoutGroup } from 'motion/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CardId, Cell } from '@srm/game-core'
 import { Badge } from '../components/Badge'
 import { Board } from '../components/Board'
@@ -18,9 +18,37 @@ import { CutinLayer } from '../components/fx/CutinLayer'
 import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
+import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
-import { RotateIcon, SparkleIcon } from '../ui/icons'
+import { RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
 import { directionLabel } from '../ui/labels'
+
+/** 席の並びの両端に置く、自分の位置。両端とも自分で、一周してつながっていることを表す */
+function YouCap({ active }: { active: boolean }) {
+  return (
+    <div aria-hidden="true" className="flex shrink-0 items-center">
+      <span
+        className={cx(
+          'rounded-full border px-1 py-2 text-xs font-bold leading-none tracking-widest [writing-mode:vertical-rl]',
+          active ? 'border-primary-500 bg-primary-500 text-white' : 'border-primary-200 bg-primary-50 text-primary-700',
+        )}
+      >
+        あなた
+      </span>
+    </div>
+  )
+}
+
+/** 席と席の間の、手番が回る向き。向きが変わったら回して見せる */
+function FlowArrow({ direction }: { direction: 1 | -1 }) {
+  return (
+    <div aria-hidden="true" className="flex shrink-0 items-center text-primary-500">
+      <span key={direction} className="fx-spin-in">
+        <TurnArrowIcon direction={direction} className="h-5 w-5" strokeWidth={2.5} />
+      </span>
+    </div>
+  )
+}
 
 /**
  * 対戦画面。見るのは自分の視点(PlayerView)だけなので、ソロでもオンラインでも同じ画面を使う。
@@ -100,6 +128,9 @@ export function GameScreen() {
   const seat = view.seatOrder.indexOf(you)
   const nextPlayer = view.seatOrder[(seat + 1) % view.seatOrder.length]
   const giveToName = nextPlayer ? nameOf(nextPlayer) : '次の人'
+  const seats = opponentsInSeatOrder(view)
+  const next = nextPlayerId(view)
+  const sevens = sevensPlaced(view)
 
   const toggle = (id: CardId) => {
     if (mode_.type === 'none') return
@@ -137,7 +168,7 @@ export function GameScreen() {
         : view.turnPlayerId === you
           ? 'あなたの手番'
           : view.turnPlayerId
-            ? `${nameOf(view.turnPlayerId)} の手番`
+            ? `${nameOf(view.turnPlayerId)} の手番${next === you ? '(次はあなた)' : ''}`
             : ''
   const isTurn = (id: string) => view.phase !== 'ended' && !setup && view.turnPlayerId === id
 
@@ -213,11 +244,33 @@ export function GameScreen() {
       <LayoutGroup>
         <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-2 sm:py-4 md:py-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
           <main className="min-w-0 space-y-2 sm:space-y-4">
-            <section aria-label="対戦相手" className="-mx-4 overflow-x-auto px-4 pb-1">
-              <div className="flex gap-3">
-                {view.opponents.map((opponent) => (
-                  <OpponentSeat key={opponent.id} opponent={opponent} isTurn={isTurn(opponent.id)} />
+            {/* 席は自分の次の人から手番の順に並べ、両端の「あなた」とつないで一周を表す */}
+            <section
+              aria-label={`対戦相手(左から、あなたの次の席の順。手番は${directionLabel(view.direction)})`}
+              className="-mx-4 overflow-x-auto px-4 pb-1"
+            >
+              <div className="flex items-stretch gap-1">
+                <YouCap active={isTurn(you)} />
+                {seats.map((opponent) => (
+                  <Fragment key={opponent.id}>
+                    <FlowArrow direction={view.direction} />
+                    <OpponentSeat
+                      opponent={opponent}
+                      isTurn={isTurn(opponent.id)}
+                      isNext={next === opponent.id}
+                      sevens={
+                        view.pending?.type === 'giveSevens'
+                          ? {
+                              count: sevens.get(opponent.id) ?? 0,
+                              choosing: view.pending.waitingFor.includes(opponent.id),
+                            }
+                          : undefined
+                      }
+                    />
+                  </Fragment>
                 ))}
+                <FlowArrow direction={view.direction} />
+                <YouCap active={isTurn(you)} />
               </div>
             </section>
 

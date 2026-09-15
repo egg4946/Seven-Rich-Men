@@ -9,7 +9,7 @@ import {
   type PlayerView,
 } from '@srm/game-core'
 import type { GameUpdate, RoomSettings, RoomView } from '@srm/protocol'
-import { startCutin } from '../fx/events'
+import { sevensCutin, startCutin } from '../fx/events'
 import { useFx } from '../fx/store'
 import {
   createOnlineClient,
@@ -131,6 +131,15 @@ function claimStartCutin(matchId: string): boolean {
 
 function namesOfView(view: PlayerView): Map<string, string> {
   return new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
+}
+
+/** 対戦の始まりの演出。7渡しの選択中なら、なぜカードを渡すのかも続けて出す */
+function playOpening(view: PlayerView): void {
+  const fx = useFx.getState()
+  fx.push(startCutin(view.seatOrder.length))
+  if (view.pending?.type !== 'giveSevens') return
+  const names = namesOfView(view)
+  fx.push(sevensCutin(view, (id) => (id === view.you.id ? 'あなた' : (names.get(id) ?? id))))
 }
 
 let cpuTimers: ReturnType<typeof setTimeout>[] = []
@@ -290,7 +299,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     if (previous) {
       announce(update.view.log.slice(previous.log.length), namesOfView(update.view), update.view.you.id)
     } else if (isFreshGame(update.view) && claimStartCutin(update.matchId)) {
-      useFx.getState().push(startCutin(update.view.seatOrder.length))
+      playOpening(update.view)
     }
     startTicker()
   }
@@ -344,7 +353,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
         reserveLeftMs: TIMER.reserveMs,
         now: Date.now(),
       }))
-      useFx.getState().push(startCutin(get().view?.seatOrder.length ?? settings.cpuCount + 1))
+      const view = get().view
+      if (view) playOpening(view)
       startTicker()
       syncSolo()
     },
