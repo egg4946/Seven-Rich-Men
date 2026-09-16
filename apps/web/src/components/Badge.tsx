@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { PlayerStatus } from '@srm/game-core'
+import type { PlayerStatus, Title } from '@srm/game-core'
 import { cx } from '../ui/cx'
 
 export type BadgeTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
@@ -17,6 +17,14 @@ export const STATUS_TONE: Record<PlayerStatus, BadgeTone> = {
   finished: 'success',
   eliminated: 'warning',
   defeated: 'danger',
+}
+
+export const TITLE_TONE: Record<Title, BadgeTone> = {
+  daifugo: 'success',
+  fugo: 'accent',
+  heimin: 'neutral',
+  hinmin: 'warning',
+  daihinmin: 'danger',
 }
 
 export function Badge({

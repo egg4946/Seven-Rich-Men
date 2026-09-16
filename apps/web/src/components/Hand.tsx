@@ -80,6 +80,7 @@ export function Hand({
             id={id}
             selected={selected.includes(id)}
             muted={playable !== null && !playable.has(id)}
+            mutedLabel={mode.type === 'exchange' ? '強い順ではないので渡せません' : undefined}
             revealed={revealed.has(id)}
             enter={enterOf(id)}
             onClick={mode.type === 'none' ? undefined : () => onToggle(id)}

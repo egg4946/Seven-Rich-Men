@@ -11,7 +11,10 @@ import {
   type PlayerId,
   type PlayerStatus,
   type RevealEffect,
+  type RoundCount,
+  type Series,
   type Suit,
+  type Title,
 } from '@srm/game-core'
 
 export type ToastTone = 'info' | 'success' | 'alert' | 'error'
@@ -70,6 +73,31 @@ export const STATUS_LABEL: Record<PlayerStatus, string> = {
   defeated: '強制敗北',
 }
 
+export const TITLE_LABEL: Record<Title, string> = {
+  daifugo: '大富豪',
+  fugo: '富豪',
+  heimin: '平民',
+  hinmin: '貧民',
+  daihinmin: '大貧民',
+}
+
+export const ROUNDS_LABEL: Record<string, string> = {
+  1: 'シングル',
+  3: '3ラウンド',
+  5: '5ラウンド',
+  endless: 'エンドレス',
+}
+
+export function roundsLabel(rounds: RoundCount): string {
+  return ROUNDS_LABEL[String(rounds)] ?? String(rounds)
+}
+
+/** 例: ラウンド 2/5、エンドレスは ラウンド 4 */
+export function roundProgress(series: Pick<Series, 'round' | 'rules'>): string {
+  const { rounds } = series.rules
+  return rounds === 'endless' ? `ラウンド ${series.round}` : `ラウンド ${series.round}/${rounds}`
+}
+
 export function directionLabel(direction: Direction): string {
   return direction === 1 ? '時計回り' : '反時計回り'
 }
@@ -85,6 +113,8 @@ const PLACE_EFFECT_TOAST: Record<number, string> = {
 
 export function describeEvent(event: GameEvent, name: NameOf): string | null {
   switch (event.type) {
+    case 'CARDS_EXCHANGED':
+      return `${name(event.upper)} ⇄ ${name(event.lower)}:${event.count}枚ずつ交換しました`
     case 'SEVENS_PLACED':
       return `${name(event.playerId)} が 7 を${event.cards.length}枚置きました`
     case 'SEVENS_GIVEN':
@@ -137,6 +167,10 @@ export function toastForEvent(
       const rank = rankOf(event.card)
       const effect = rank === null ? undefined : PLACE_EFFECT_TOAST[rank]
       return effect ? { tone: 'info', message: `${name(event.playerId)} の${effect}` } : null
+    }
+    case 'CARDS_EXCHANGED': {
+      const partner = event.upper === humanId ? event.lower : event.lower === humanId ? event.upper : null
+      return partner ? { tone: 'info', message: `${name(partner)} と${event.count}枚ずつ交換しました` } : null
     }
     case 'SEVENS_GIVEN':
       return event.to === humanId

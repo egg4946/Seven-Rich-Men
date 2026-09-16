@@ -108,6 +108,8 @@ export function createAppServer(options: AppOptions) {
       }),
     )
     socket.on('room:start', (ack) => handle(ack, () => manager.start(socket.id)))
+    socket.on('room:next', (ack) => handle(ack, () => manager.next(socket.id)))
+    socket.on('room:end', (ack) => handle(ack, () => manager.end(socket.id)))
     socket.on('game:act', (payload, ack) =>
       handle(ack, () => {
         const parsed = parseAct(payload)

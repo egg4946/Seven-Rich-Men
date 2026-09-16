@@ -1,5 +1,15 @@
 import { useState, type ReactNode } from 'react'
-import { JOKER, cardId, rankOf, removeCards, type Action, type CardId, type Cell, type PlayerView } from '@srm/game-core'
+import {
+  JOKER,
+  cardId,
+  rankOf,
+  removeCards,
+  tributeOptions,
+  type Action,
+  type CardId,
+  type Cell,
+  type PlayerView,
+} from '@srm/game-core'
 import {
   jokerBlockedCards,
   jokerFinishes,
@@ -11,7 +21,7 @@ import {
 import { sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
 import { AlertIcon } from '../ui/icons'
-import { RANKS, cardName, rankLabel, type NameOf } from '../ui/labels'
+import { RANKS, TITLE_LABEL, cardName, rankLabel, type NameOf } from '../ui/labels'
 import { Button } from './Button'
 
 /** ボタン以外の出し方の案内 */
@@ -104,6 +114,54 @@ export function DecisionPanel({
 
   if (pending) {
     switch (pending.type) {
+      case 'exchange': {
+        const titleOf = (id: string) => {
+          const title = view.titles?.[id]
+          return title ? TITLE_LABEL[title] : '平民'
+        }
+        const pair = pending.pairs.find((p) => p.upper === me || p.lower === me)
+        if (!pair) {
+          return (
+            <Waiting text={`あなたは${titleOf(me)}なので、交換はありません。ほかの人が交換するカードを選んでいます`} />
+          )
+        }
+        const upper = pair.upper === me
+        const partner = upper ? pair.lower : pair.upper
+        const partnerLabel = `${nameOf(partner)}(${titleOf(partner)})`
+
+        if (mode.type !== 'exchange') {
+          const waiting = pending.waitingFor.includes(partner)
+            ? `${partnerLabel} がカードを選んでいます`
+            : 'ほかの人が選び終わるのを待っています'
+          // 下位で、同じ強さのカードに迷う余地がなければ、選ばずに決まっている
+          const auto = !upper && pending.yours === null ? tributeOptions(view.you.hand, pair.count) : null
+          const decided =
+            auto && auto.pick === 0
+              ? `強い順の ${auto.fixed.map(cardName).join('・')} を ${partnerLabel} に渡します。`
+              : `${partnerLabel} に渡すカードを選びました。`
+          return <Waiting text={`${decided}${waiting}`} />
+        }
+
+        const cards = [...mode.fixed, ...selected]
+        const ready = selected.length === mode.pick
+        const description = upper
+          ? `${partnerLabel} に渡すカードを好きに${pair.count}枚選んでください(${selected.length}/${pair.count})。代わりに、${nameOf(partner)} から強い順に${pair.count}枚もらいます。`
+          : `${partnerLabel} に、強い順に${pair.count}枚渡します。${
+              mode.fixed.length > 0 ? `${mode.fixed.map(cardName).join('・')} は必ず渡します。` : ''
+            }同じ強さの ${mode.choices.map(cardName).join('・')} から${mode.pick}枚選んでください(${selected.length}/${mode.pick})。`
+        return (
+          <Panel
+            title={`カード交換(あなたは${titleOf(me)})`}
+            description={description}
+            actions={
+              <Button disabled={!ready} onClick={() => act({ type: 'EXCHANGE', playerId: me, cards })}>
+                {ready && !upper ? `${cards.map(cardName).join('・')} を渡す` : `${pair.count}枚を渡す`}
+              </Button>
+            }
+          />
+        )
+      }
+
       case 'giveSevens': {
         if (mode.type !== 'give') {
           const placed = sevensPlaced(view).get(me) ?? 0

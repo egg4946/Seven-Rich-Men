@@ -61,6 +61,20 @@ export function RulesDialog({ open, onClose }: { open: boolean; onClose: () => v
           </tbody>
         </table>
       </div>
+
+      <h3 className="mt-6 text-base font-semibold text-slate-900">ラウンド制(3ラウンド・5ラウンド・エンドレス)</h3>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        <li>
+          毎ラウンド、順位でポイントがもらえます(4人戦なら 1位3点・2位2点・3位1点・4位0点)。合計ポイントが一番多い人の優勝です。同点なら最後のラウンドの順位で決めます。
+        </li>
+        <li>
+          2ラウンド目からは、前のラウンドの順位で身分(大富豪・富豪・平民・貧民・大貧民)が決まり、7を並べる前にカードを交換します。
+        </li>
+        <li>
+          大貧民は強いカードから2枚を大富豪に渡し、大富豪は好きなカードを2枚渡します。貧民と富豪は1枚ずつです。全員が同時に渡すので、もらったカードは渡せません。
+        </li>
+        <li>強さの順番: ジョーカー &gt; 7 &gt; 8 &gt; 6 &gt; 9 &gt; 5 &gt; 10 &gt; 4 &gt; 3 &gt; J &gt; Q &gt; 2 &gt; K &gt; A</li>
+      </ul>
     </Dialog>
   )
 }

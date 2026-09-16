@@ -94,6 +94,19 @@ export type DefeatReason =
   | 'jokerFinish'
 
 /** 誰かの入力を待っている場面 */
+/** 身分(§9-1) */
+export type Title = 'daifugo' | 'fugo' | 'heimin' | 'hinmin' | 'daihinmin'
+
+/** 4人戦の交換。double: 2枚と1枚(大富豪あり)、single: 1枚だけ(大富豪なし) */
+export type FourPlayerExchange = 'double' | 'single'
+
+/** カード交換の組。lower は強い順に、upper は好きなカードを count 枚ずつ相手に渡す */
+export interface ExchangePair {
+  upper: PlayerId
+  lower: PlayerId
+  count: number
+}
+
 export type Pending =
   /** 7渡し。全員が同時に選ぶ。 */
   | { type: 'giveSevens'; required: Record<PlayerId, number>; chosen: Record<PlayerId, CardId[]> }
@@ -119,9 +132,13 @@ export type Pending =
   /** マスのカードの持ち主が、ジョーカーをもらうか選ぶ */
   | { type: 'jokerTake'; holder: PlayerId }
 
+  /** ラウンド開始時のカード交換(§9-2)。全員が同時に選ぶ。 */
+  | { type: 'exchange'; pairs: ExchangePair[]; chosen: Record<PlayerId, CardId[]> }
+
 export type Phase = 'turn' | 'pending' | 'ended'
 
 export type Action =
+  | { type: 'EXCHANGE'; playerId: PlayerId; cards: CardId[] }
   | { type: 'GIVE_SEVENS'; playerId: PlayerId; cards: CardId[] }
   | { type: 'DECLARE'; playerId: PlayerId; effect: SelfDeclareEffect }
   | { type: 'PLACE'; playerId: PlayerId; card: CardId }
@@ -134,6 +151,7 @@ export type Action =
 
 /** ログ。全員に配られるので、隠すべき情報(渡したカードの中身など)は入れない。 */
 export type GameEvent =
+  | { type: 'CARDS_EXCHANGED'; upper: PlayerId; lower: PlayerId; count: number }
   | { type: 'SEVENS_PLACED'; playerId: PlayerId; cards: CardId[] }
   | { type: 'SEVENS_GIVEN'; from: PlayerId; to: PlayerId; count: number }
   | { type: 'TURN_STARTED'; playerId: PlayerId }
@@ -156,6 +174,8 @@ export type GameEvent =
 export interface GameState {
   players: Player[]
   board: Board
+  /** このラウンドの身分。1ラウンド目(とシングル)は null */
+  titles: Record<PlayerId, Title> | null
   /** 現在の手番(pending 中は、その場面を起こした手番のプレイヤー) */
   turnIndex: number
   direction: Direction

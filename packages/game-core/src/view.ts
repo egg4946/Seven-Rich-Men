@@ -1,10 +1,12 @@
-import { legalActions, requiredGiveCount, whoMustAct } from './legal.js'
+import { exchangePairOf, legalActions, requiredGiveCount, whoMustAct } from './legal.js'
+import { tributeOptions } from './series.js'
 import type {
   Action,
   Board,
   CardId,
   Cell,
   Direction,
+  ExchangePair,
   GameEvent,
   GameState,
   Phase,
@@ -13,6 +15,7 @@ import type {
   PlayerStatus,
   ReactionEffect,
   RevealEffect,
+  Title,
 } from './types.js'
 
 /** 自分から見た他プレイヤー。手札は枚数と、公開されたカードしか見えない。 */
@@ -42,7 +45,21 @@ export interface SelfView {
  * 待ち状態の見え方。割り込み宣言では「誰が宣言できるか」は本人以外に見せない。
  * (受付があること自体は見えるが、これは仕様上許容している §4-4)
  */
+/**
+ * カード交換で自分が選ぶ内容。fixed は必ず渡すカード、choices から pick 枚を選ぶ。
+ * 上位(大富豪・富豪)は手札から自由に選ぶので fixed は空、choices は手札全部。
+ */
+export interface ExchangeChoice {
+  role: 'upper' | 'lower'
+  partner: PlayerId
+  count: number
+  fixed: CardId[]
+  choices: CardId[]
+  pick: number
+}
+
 export type PendingView =
+  | { type: 'exchange'; pairs: ExchangePair[]; yours: ExchangeChoice | null; waitingFor: PlayerId[] }
   | { type: 'giveSevens'; yourCount: number; waitingFor: PlayerId[] }
   | { type: 'bombRank'; by: PlayerId }
   | { type: 'tenDiscard'; by: PlayerId }
@@ -64,6 +81,8 @@ export interface PlayerView {
   /** 席順(時計回り)。7渡しの渡し先や、相手の並びの表示に使う。 */
   seatOrder: PlayerId[]
   board: Board
+  /** このラウンドの身分。1ラウンド目(とシングル)は null */
+  titles: Record<PlayerId, Title> | null
   direction: Direction
   phase: Phase
   /** 手番のプレイヤー(待ち状態の間は、その場面を起こした手番の人) */
@@ -97,6 +116,25 @@ export function viewFor(state: GameState, playerId: PlayerId): PlayerView | null
   let pendingView: PendingView | null = null
   if (pending) {
     switch (pending.type) {
+      case 'exchange': {
+        const pair = exchangePairOf(state, playerId)
+        let yours: ExchangeChoice | null = null
+        if (pair) {
+          const role = pair.upper === playerId ? 'upper' : 'lower'
+          const partner = role === 'upper' ? pair.lower : pair.upper
+          yours =
+            role === 'upper'
+              ? { role, partner, count: pair.count, fixed: [], choices: me.hand.slice(), pick: pair.count }
+              : { role, partner, count: pair.count, ...tributeOptions(me.hand, pair.count) }
+        }
+        pendingView = {
+          type: 'exchange',
+          pairs: pending.pairs.map((p) => ({ ...p })),
+          yours,
+          waitingFor: actors,
+        }
+        break
+      }
       case 'giveSevens':
         pendingView = {
           type: 'giveSevens',
@@ -156,6 +194,7 @@ export function viewFor(state: GameState, playerId: PlayerId): PlayerView | null
       })),
     seatOrder: state.players.map((p) => p.id),
     board: structuredClone(state.board),
+    titles: state.titles ? { ...state.titles } : null,
     direction: state.direction,
     phase: state.phase,
     turnPlayerId: state.phase === 'ended' ? null : (state.players[state.turnIndex]?.id ?? null),

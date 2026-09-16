@@ -2,12 +2,14 @@ import { selfDeclareRank } from './actions.js'
 import { canPlace, cellCardId, jokerWithCell } from './board.js'
 import { rankOf } from './cards.js'
 import { currentPlayer, playerById, unusedCards } from './flow.js'
+import { isValidTribute } from './series.js'
 import {
   JOKER,
   RANK_MAX,
   RANK_MIN,
   SUITS,
   type Action,
+  type ExchangePair,
   type GameState,
   type PlayerId,
   type SelfDeclareEffect,
@@ -22,6 +24,10 @@ export function whoMustAct(state: GameState): PlayerId[] {
     return player?.status === 'playing' ? [player.id] : []
   }
   switch (pending.type) {
+    case 'exchange':
+      return pending.pairs
+        .flatMap((pair) => [pair.upper, pair.lower])
+        .filter((id) => pending.chosen[id] === undefined)
     case 'giveSevens':
       return Object.entries(pending.required)
         .filter(([id, count]) => count > 0 && pending.chosen[id] === undefined)
@@ -49,7 +55,7 @@ export function decisionKey(state: GameState): string {
 
 /**
  * そのプレイヤーが今取れる操作の一覧。CPUもUIもこの範囲だけを候補にする。
- * 7渡し(GIVE_SEVENS)は組み合わせが多いため列挙しない。枚数は view の pending を見ること。
+ * カード交換(EXCHANGE)と7渡し(GIVE_SEVENS)は組み合わせが多いため列挙しない。枚数は view の pending を見ること。
  */
 export function legalActions(state: GameState, playerId: PlayerId): Action[] {
   if (!whoMustAct(state).includes(playerId)) return []
@@ -59,6 +65,7 @@ export function legalActions(state: GameState, playerId: PlayerId): Action[] {
 
   if (pending) {
     switch (pending.type) {
+      case 'exchange':
       case 'giveSevens':
         return []
       case 'bombRank': {
@@ -128,6 +135,13 @@ export function legalActions(state: GameState, playerId: PlayerId): Action[] {
   return actions
 }
 
+/** カード交換で、そのプレイヤーが入っている組(選択済み・対象外なら null) */
+export function exchangePairOf(state: GameState, playerId: PlayerId): ExchangePair | null {
+  const pending = state.pending
+  if (pending?.type !== 'exchange' || pending.chosen[playerId] !== undefined) return null
+  return pending.pairs.find((pair) => pair.upper === playerId || pair.lower === playerId) ?? null
+}
+
 /** 7渡しで、そのプレイヤーが渡す枚数(選択済み・対象外なら0) */
 export function requiredGiveCount(state: GameState, playerId: PlayerId): number {
   const pending = state.pending
@@ -139,6 +153,19 @@ export function requiredGiveCount(state: GameState, playerId: PlayerId): number 
 export function validateAction(state: GameState, action: Action): string | null {
   if (state.phase === 'ended') return 'ゲームは終了しています'
   if (!whoMustAct(state).includes(action.playerId)) return '今は操作できません'
+
+  if (action.type === 'EXCHANGE') {
+    const pair = exchangePairOf(state, action.playerId)
+    const player = playerById(state, action.playerId)
+    if (!pair || !player) return 'カード交換の場面ではありません'
+    if (action.cards.length !== pair.count) return `${pair.count}枚選んでください`
+    if (new Set(action.cards).size !== action.cards.length) return '同じカードが含まれています'
+    if (!action.cards.every((id) => player.hand.includes(id))) return 'そのカードを持っていません'
+    if (pair.lower === action.playerId && !isValidTribute(player.hand, pair.count, action.cards)) {
+      return '強い順に選んでください'
+    }
+    return null
+  }
 
   if (action.type === 'GIVE_SEVENS') {
     if (state.pending?.type !== 'giveSevens') return '7渡しの場面ではありません'
@@ -179,6 +206,7 @@ function sameAction(a: Action, b: Action): boolean {
       return b.type === 'REACT' && a.effect === b.effect
     case 'JOKER_TAKE':
       return b.type === 'JOKER_TAKE' && a.take === b.take
+    case 'EXCHANGE':
     case 'GIVE_SEVENS':
       return false
   }

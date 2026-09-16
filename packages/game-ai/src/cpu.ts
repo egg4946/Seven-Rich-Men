@@ -39,6 +39,16 @@ export function decideAction(view: PlayerView, options: CpuOptions = {}): Action
   const random = () => (options.rng ? options.rng.next() : Math.random())
   const me = view.you.id
 
+  if (view.pending?.type === 'exchange') {
+    const choice = view.pending.yours
+    if (!choice) return null
+    // 下位は同じ強さの中から、上位は手札全体から、残したくないものを渡す
+    const picked = rankByKeepValue(view.you.hand)
+      .filter((id) => choice.choices.includes(id))
+      .slice(0, choice.pick)
+    return { type: 'EXCHANGE', playerId: me, cards: [...choice.fixed, ...picked] }
+  }
+
   if (view.pending?.type === 'giveSevens') {
     const count = view.pending.yourCount
     if (count === 0) return null
@@ -65,6 +75,7 @@ export function decideAction(view: PlayerView, options: CpuOptions = {}): Action
 function scoreAction(view: PlayerView, action: Action): number {
   const hand = view.you.hand
   switch (action.type) {
+    case 'EXCHANGE':
     case 'GIVE_SEVENS':
       return 0
     case 'PLACE':

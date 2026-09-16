@@ -27,10 +27,21 @@ export type SelectionMode =
   | { type: 'give'; count: number }
   /** 10捨て。もう1枚を選ぶ */
   | { type: 'ten' }
+  /**
+   * カード交換。fixed は必ず渡すカード(選択済みとして見せる)、choices から pick 枚を選ぶ。
+   * 上位(大富豪・富豪)は手札全部から選ぶ。
+   */
+  | { type: 'exchange'; role: 'upper' | 'lower'; fixed: CardId[]; choices: CardId[]; pick: number }
 
 export function selectionMode(view: PlayerView): SelectionMode {
   if (view.phase === 'ended') return { type: 'none' }
   const pending = view.pending
+  if (pending?.type === 'exchange') {
+    const yours = pending.yours
+    return yours && yours.pick > 0
+      ? { type: 'exchange', role: yours.role, fixed: yours.fixed, choices: yours.choices, pick: yours.pick }
+      : { type: 'none' }
+  }
   if (pending?.type === 'giveSevens') {
     return pending.yourCount > 0 ? { type: 'give', count: pending.yourCount } : { type: 'none' }
   }
@@ -79,6 +90,10 @@ function openEndCards(board: Board): CardId[] {
  */
 export function playableCards(view: PlayerView, mode: SelectionMode): Set<CardId> | null {
   if (mode.type === 'give' || mode.type === 'ten') return null
+  // 下位の交換は、渡せる(強い順の)カード以外を暗くする
+  if (mode.type === 'exchange') return mode.role === 'lower' ? new Set([...mode.fixed, ...mode.choices]) : null
+  // 交換の選択待ちの間は、まだ7も置かれていないので暗くしない
+  if (view.pending?.type === 'exchange') return null
   if (view.phase === 'ended' || view.you.status !== 'playing') return null
 
   const playable = new Set<CardId>()

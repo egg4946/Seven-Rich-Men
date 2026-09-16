@@ -19,10 +19,11 @@ export function opponentsInSeatOrder(view: PlayerView): OpponentView[] {
 
 /**
  * 今の手番の次に回ってくる人(上がり・脱落した人は飛ばす)。スキップの数は考えない。
- * 7渡しの間と対戦終了後は null。
+ * カード交換・7渡しの間と対戦終了後は null。
  */
 export function nextPlayerId(view: PlayerView): PlayerId | null {
-  if (view.phase === 'ended' || view.pending?.type === 'giveSevens' || !view.turnPlayerId) return null
+  const setup = view.pending?.type === 'giveSevens' || view.pending?.type === 'exchange'
+  if (view.phase === 'ended' || setup || !view.turnPlayerId) return null
   const status = new Map<PlayerId, PlayerStatus>([
     [view.you.id, view.you.status],
     ...view.opponents.map((o) => [o.id, o.status] as [PlayerId, PlayerStatus]),

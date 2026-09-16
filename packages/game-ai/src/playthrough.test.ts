@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { SUITS, createGame, seededRng, type GameState } from '@srm/game-core'
+import { SUITS, createGame, seededRng, titlesFor, type GameState } from '@srm/game-core'
 import { playOut } from './simulate.js'
 
-function newGame(seed: number, playerCount: number): GameState {
+function newGame(seed: number, playerCount: number, withTitles = false): GameState {
+  const ids = Array.from({ length: playerCount }, (_, i) => `p${i}`)
   return createGame({
+    titles: withTitles ? titlesFor(ids, seed % 2 === 0 ? 'double' : 'single') : null,
     players: Array.from({ length: playerCount }, (_, i) => ({
       id: `p${i}`,
       name: `CPU${i}`,
@@ -31,6 +33,17 @@ describe('CPU同士の通し実行', () => {
         const { state } = playOut(newGame(seed, playerCount), { rng: seededRng(seed) })
         expect(state.phase).toBe('ended')
         expect(new Set(state.ranking).size).toBe(playerCount)
+      }
+    })
+  }
+
+  for (const playerCount of [3, 4, 5, 6]) {
+    it(`${playerCount}人: 2ラウンド目以降(カード交換あり)も不正な手を選ばず終局する`, () => {
+      for (const seed of seeds) {
+        const { state } = playOut(newGame(seed, playerCount, true), { rng: seededRng(seed) })
+        expect(state.phase).toBe('ended')
+        expect(state.log.some((e) => e.type === 'CARDS_EXCHANGED')).toBe(true)
+        expect(cardsAccountedFor(state)).toBe(53)
       }
     })
   }

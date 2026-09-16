@@ -24,6 +24,7 @@ export function makeState(opts: {
   return {
     players,
     board,
+    titles: null,
     turnIndex: opts.turnIndex ?? 0,
     direction: opts.direction ?? 1,
     phase: 'turn',

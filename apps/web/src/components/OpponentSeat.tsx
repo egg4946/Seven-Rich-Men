@@ -1,8 +1,8 @@
-import type { OpponentView } from '@srm/game-core'
+import type { OpponentView, Title } from '@srm/game-core'
 import { useFx } from '../fx/store'
 import { cx } from '../ui/cx'
-import { STATUS_LABEL } from '../ui/labels'
-import { Badge, STATUS_TONE } from './Badge'
+import { STATUS_LABEL, TITLE_LABEL } from '../ui/labels'
+import { Badge, STATUS_TONE, TITLE_TONE } from './Badge'
 import { MiniCard } from './PlayingCard'
 
 export function OpponentSeat({
@@ -10,6 +10,8 @@ export function OpponentSeat({
   isTurn,
   isNext = false,
   sevens,
+  title,
+  exchange,
 }: {
   opponent: OpponentView
   isTurn: boolean
@@ -17,6 +19,10 @@ export function OpponentSeat({
   isNext?: boolean
   /** 7渡しの間だけ渡す: 置いた7の枚数と、まだ渡すカードを選んでいるか */
   sevens?: { count: number; choosing: boolean }
+  /** ラウンド制の2ラウンド目以降の身分 */
+  title?: Title
+  /** カード交換の間だけ渡す: 交換する枚数(しなければ0)と、まだ選んでいるか */
+  exchange?: { count: number; choosing: boolean }
 }) {
   const out = opponent.status !== 'playing'
   // パス・出したカードなど、この人が今したことを一瞬だけ席の上に出す(内容はログと通知にもある)
@@ -51,7 +57,17 @@ export function OpponentSeat({
         ) : null}
       </div>
 
-      <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-body">
+      <dl className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-body">
+        {title && (
+          <div className="flex">
+            <dt className="sr-only">身分</dt>
+            <dd>
+              <Badge tone={TITLE_TONE[title]} className="px-2 py-0">
+                {TITLE_LABEL[title]}
+              </Badge>
+            </dd>
+          </div>
+        )}
         <div className="flex gap-1">
           <dt>手札</dt>
           <dd key={opponent.handCount} className="fx-bump font-semibold text-slate-900">
@@ -77,6 +93,24 @@ export function OpponentSeat({
                   {sevens.count}枚
                   <span className={cx('ml-1 font-normal', sevens.choosing ? 'text-amber-700' : 'text-emerald-700')}>
                     {sevens.choosing ? '選択中' : '選択済み'}
+                  </span>
+                </>
+              )}
+            </dd>
+          </div>
+        )}
+        {exchange && (
+          // 交換の間だけ、この人が何枚交換するのかを出しておく
+          <div className="flex gap-1">
+            <dt>交換</dt>
+            <dd className="font-semibold text-slate-900">
+              {exchange.count === 0 ? (
+                'なし'
+              ) : (
+                <>
+                  {exchange.count}枚
+                  <span className={cx('ml-1 font-normal', exchange.choosing ? 'text-amber-700' : 'text-emerald-700')}>
+                    {exchange.choosing ? '選択中' : '選択済み'}
                   </span>
                 </>
               )}

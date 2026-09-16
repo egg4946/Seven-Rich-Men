@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SUITS, type Action, type PlayerView } from '@srm/game-core'
+import { SUITS, type Action, type PlayerView, type Series, type SeriesRules } from '@srm/game-core'
 
 /**
  * クライアントとサーバーの間でやり取りするデータの定義。
@@ -14,13 +14,22 @@ export const LIMITS = { roomName: 24, playerName: 12 } as const
 
 export type CpuLevel = 'easy' | 'normal'
 
-export interface RoomSettings {
+/** ラウンド数・席順・4人戦の交換(docs/RULES.md §9-0)も含む */
+export interface RoomSettings extends SeriesRules {
   /** 人間とCPUを合わせた人数(3〜6) */
   seats: number
   cpuLevel: CpuLevel
 }
 
-/** lobby: 開始前 / playing: 対戦中 / result: 対戦が終わって結果を表示中 */
+/** ラウンド制の進み具合。standings はポイントの多い順(同点は直前のラウンドの順位) */
+export interface SeriesView extends Series {
+  standings: string[]
+}
+
+/**
+ * lobby: 開始前 / playing: 対戦中 / result: ラウンドが終わって結果を表示中
+ * (ラウンド制の途中なら series.finished が false)
+ */
 export type RoomPhase = 'lobby' | 'playing' | 'result'
 
 export interface RoomMemberView {
@@ -40,8 +49,10 @@ export interface RoomView {
   hostId: string | null
   members: RoomMemberView[]
   settings: RoomSettings
-  /** 今の(または直前の)対戦のID。対戦ごとに変わり、開始前は null */
+  /** 今の(または直前の)ラウンドのID。ラウンドごとに変わり、開始前は null */
   matchId: string | null
+  /** 今の(または直前の)対戦のラウンドの進み具合。開始前は null */
+  series: SeriesView | null
 }
 
 /**
@@ -94,6 +105,10 @@ export interface ClientToServerEvents {
   'room:leave': (ack: (res: Ack<null>) => void) => void
   'room:settings': (payload: RoomSettings, ack: (res: Ack<null>) => void) => void
   'room:start': (ack: (res: Ack<null>) => void) => void
+  /** ラウンド制で、次のラウンドを始める(ホストだけ) */
+  'room:next': (ack: (res: Ack<null>) => void) => void
+  /** エンドレスを、ラウンドの合間に終える(ホストだけ) */
+  'room:end': (ack: (res: Ack<null>) => void) => void
   'game:act': (payload: ActPayload, ack: (res: Ack<null>) => void) => void
 }
 
@@ -132,6 +147,9 @@ const joinSchema = z.object({
 const settingsSchema = z.object({
   seats: z.number().int().min(MIN_SEATS).max(MAX_SEATS),
   cpuLevel: z.enum(['easy', 'normal']),
+  rounds: z.union([z.literal(1), z.literal(3), z.literal(5), z.literal('endless')]),
+  seating: z.enum(['fixed', 'random']),
+  fourPlayerExchange: z.enum(['double', 'single']),
 })
 
 const cardId = z.string().regex(/^(JOKER|[SHDC](1[0-3]|[1-9]))$/)
@@ -139,6 +157,7 @@ const rank = z.number().int().min(1).max(13)
 const playerId = z.string().min(1).max(64)
 
 const actionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('EXCHANGE'), playerId, cards: z.array(cardId).max(2) }),
   z.object({ type: z.literal('GIVE_SEVENS'), playerId, cards: z.array(cardId).max(4) }),
   z.object({ type: z.literal('DECLARE'), playerId, effect: z.enum(['rokurokubi', 'ambulance']) }),
   z.object({ type: z.literal('PLACE'), playerId, card: cardId }),

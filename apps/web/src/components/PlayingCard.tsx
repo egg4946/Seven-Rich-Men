@@ -47,6 +47,7 @@ export function HandCard({
   id,
   selected,
   muted,
+  mutedLabel = '今は出せません',
   revealed,
   enter,
   onClick,
@@ -55,6 +56,8 @@ export function HandCard({
   id: CardId
   selected: boolean
   muted: boolean
+  /** 暗くしている理由の読み上げ */
+  mutedLabel?: string
   revealed: boolean
   enter?: CardEnter | null
   onClick?: () => void
@@ -62,7 +65,7 @@ export function HandCard({
 }) {
   const cell = parseCard(id)
   const color = colorOf(id)
-  const label = [cardName(id), revealed && '公開中', muted && '今は出せません'].filter(Boolean).join('、')
+  const label = [cardName(id), revealed && '公開中', muted && mutedLabel].filter(Boolean).join('、')
   const className = cx(
     'relative flex h-16 w-11 shrink-0 flex-col justify-between rounded-lg border bg-white p-1 text-left leading-none shadow-sm transition-colors md:h-20 md:w-14 md:p-1.5',
     // 手札を重ねて並べたときも、選んだカードは右隣より手前に出す
