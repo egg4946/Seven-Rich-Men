@@ -64,6 +64,15 @@ export function SparkleIcon(props: IconProps) {
   )
 }
 
+/** 席と席の間に置く、手番が回る向きの矢印。反時計回りは左向きにする */
+export function TurnArrowIcon({ direction, style, ...props }: IconProps & { direction: 1 | -1 }) {
+  return (
+    <svg {...stroke} {...props} style={{ ...style, transform: direction === -1 ? 'scaleX(-1)' : undefined }}>
+      <path d="M4 12h15M13 6l6 6-6 6" />
+    </svg>
+  )
+}
+
 /** 手番の向き。反時計回りは左右反転して表す */
 export function RotateIcon({ direction, style, ...props }: IconProps & { direction: 1 | -1 }) {
   return (

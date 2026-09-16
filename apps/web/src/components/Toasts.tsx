@@ -29,7 +29,7 @@ export function Toasts() {
   return (
     <div
       aria-label="通知"
-      className="pointer-events-none fixed inset-x-4 top-16 z-50 flex flex-col items-center gap-2 md:inset-x-auto md:right-4 md:w-96"
+      className="pointer-events-none fixed inset-x-4 top-14 z-50 flex flex-col items-center gap-2 md:inset-x-auto md:top-16 md:right-4 md:w-96"
     >
       {toasts.map((toast, index) => (
         <motion.div

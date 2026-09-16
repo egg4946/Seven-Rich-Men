@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import type { CpuLevel } from '@srm/game-ai'
 import { LIMITS } from '@srm/protocol'
 import { Button } from '../components/Button'
@@ -6,6 +6,7 @@ import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
 import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
+import { SLOW_CONNECT_MS, wakeServer } from '../online/client'
 import { cx } from '../ui/cx'
 
 /** タイトルで扇状に広げるカード(4枚の7とジョーカー) */
@@ -20,11 +21,56 @@ const HERO_CARDS = [
 const inputClass =
   'h-11 w-full rounded-lg border border-slate-300 px-3 text-base text-slate-900 caret-primary-500 transition-colors placeholder:text-slate-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 focus:outline-none'
 
+/** サーバーの起動を待っている間の案内。止まっていたかどうかは画面から分からないので「かもしれない」と伝える */
+function WakingNotice({ onCancel }: { onCancel: () => void }) {
+  const [startedAt] = useState(() => Date.now())
+  const [now, setNow] = useState(startedAt)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  // 案内が出るまでに待った分も足す
+  const seconds = Math.floor((now - startedAt + SLOW_CONNECT_MS) / 1000)
+
+  const message = 'しばらく遊ばれていないと、起動に1分ほどかかります。'
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800">
+      {/* 読み上げは最初の1回だけにする。毎秒変わる秒数を含めると、そのたびに読み上げ直される */}
+      <p role="status" className="sr-only">
+        サーバーを起動しています。{message}
+      </p>
+      <span
+        aria-hidden="true"
+        className="mt-1 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary-200 border-t-primary-500"
+      />
+      <p aria-hidden="true" className="flex-1">
+        サーバーを起動しています({seconds}秒)。{message}
+      </p>
+      <Button variant="subtle" size="sm" onClick={onCancel} className="-my-0.5 shrink-0">
+        やめる
+      </Button>
+    </div>
+  )
+}
+
 export function TitleScreen() {
   const initial = useGameStore((s) => s.settings)
   const busy = useGameStore((s) => s.busy)
   const startSolo = useGameStore((s) => s.startSolo)
   const joinRoom = useGameStore((s) => s.joinRoom)
+  const cancelJoin = useGameStore((s) => s.cancelJoin)
+  const waking = useGameStore((s) => s.connection === 'waking')
+
+  // 開いたまま時間がたつと公開環境のサーバーは止まるので、画面を開いた・戻ってきたときに起こしておく
+  useEffect(() => {
+    wakeServer()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') wakeServer()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   // 招待リンク(?room=部屋名)から来たら、部屋名を入れておく
   const invitedRoom = useMemo(() => new URLSearchParams(window.location.search).get('room') ?? '', [])
@@ -118,8 +164,9 @@ export function TitleScreen() {
               )}
             </div>
             <Button type="submit" size="lg" className="w-full" disabled={busy || roomName.trim() === ''}>
-              {busy ? '接続しています…' : '部屋に入る'}
+              {waking ? 'サーバーを起動しています…' : busy ? '接続しています…' : '部屋に入る'}
             </Button>
+            {waking && <WakingNotice onCancel={cancelJoin} />}
           </form>
         </section>
 

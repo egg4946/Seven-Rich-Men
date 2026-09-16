@@ -9,7 +9,8 @@ import type {
   ServerToClientEvents,
 } from '@srm/protocol'
 
-export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'reconnecting'
+/** waking: なかなかつながらない。止まっていたサーバーが起動するのを待っている */
+export type ConnectionState = 'idle' | 'connecting' | 'waking' | 'connected' | 'reconnecting'
 
 type Client = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -30,6 +31,15 @@ const TOKEN_KEY = 'srm:token'
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/
 const LAST_ROOM_KEY = 'srm:last-room'
 const ACK_TIMEOUT_MS = 8000
+/** これを過ぎてもつながらなければ、サーバーが起動中かもしれないと案内する */
+export const SLOW_CONNECT_MS = 4000
+/** 公開環境(Render の無料枠)は、止まっていると起動に1分ほどかかるので、それより長く待つ */
+const WAKE_TIMEOUT_MS = 90_000
+/** サーバーを起こす合図を送る間隔の下限 */
+const WAKE_INTERVAL_MS = 60_000
+
+/** 入室の結果。cancelled は、つながるのを待つ途中で自分からやめた */
+export type JoinResult = Ack<RoomView> | { ok: false; code: 'cancelled'; error: string }
 
 /**
  * 開発中だけ、URL に ?as=b のように付けると別のトークンを使える。
@@ -87,6 +97,26 @@ export function loadLastRoom(): JoinTarget | null {
   }
 }
 
+let lastWakeAt = -Infinity
+
+/**
+ * 止まっているかもしれないサーバーを、部屋に入る前から起こしておく(応答は使わない)。
+ * タイトル画面を開いたまま時間がたつと、公開環境のサーバーは止まっているので、
+ * 画面に戻ってきたときに合図を送り、部屋名を入れている間に起動を進める。
+ */
+export function wakeServer(): void {
+  const now = Date.now()
+  if (now - lastWakeAt < WAKE_INTERVAL_MS) return
+  lastWakeAt = now
+  const base = import.meta.env.VITE_SERVER_URL
+  const request = base
+    ? fetch(new URL('/healthz', base), { mode: 'no-cors', cache: 'no-store' })
+    : fetch('/healthz', { cache: 'no-store' })
+  request.catch(() => {
+    // 起こせなくても、入室するときの接続で起動する
+  })
+}
+
 /** Socket.IO の接続と、サーバーへの要求をまとめる。画面の状態には依存しない */
 export function createOnlineClient(handlers: OnlineHandlers) {
   const url = import.meta.env.VITE_SERVER_URL
@@ -129,30 +159,41 @@ export function createOnlineClient(handlers: OnlineHandlers) {
   socket.on('room:state', (room) => handlers.onRoom(room))
   socket.on('game:update', (update) => handlers.onGame(update))
 
-  const connectOnce = () =>
-    new Promise<boolean>((resolve) => {
-      const finish = (connected: boolean) => {
+  /** つながるのを待っている間だけ入る。呼ぶと待つのをやめる */
+  let cancelConnect: (() => void) | null = null
+
+  /**
+   * つながるまで待つ。起動中のサーバーへの接続は失敗するが、Socket.IO が間隔をあけて自動でやり直すので、
+   * 失敗してもすぐには諦めず、WAKE_TIMEOUT_MS まで待つ。
+   */
+  const connect = () =>
+    new Promise<'connected' | 'timeout' | 'cancelled'>((resolve) => {
+      const finish = (result: 'connected' | 'timeout' | 'cancelled') => {
         socket.off('connect', onConnect)
-        socket.off('connect_error', onError)
+        clearTimeout(slow)
         clearTimeout(timer)
-        resolve(connected)
+        cancelConnect = null
+        resolve(result)
       }
-      const onConnect = () => finish(true)
-      const onError = () => finish(false)
-      const timer = setTimeout(() => finish(false), ACK_TIMEOUT_MS)
+      const onConnect = () => finish('connected')
+      const slow = setTimeout(() => handlers.onConnection('waking'), SLOW_CONNECT_MS)
+      const timer = setTimeout(() => finish('timeout'), WAKE_TIMEOUT_MS)
+      cancelConnect = () => finish('cancelled')
       socket.on('connect', onConnect)
-      socket.on('connect_error', onError)
       socket.connect()
     })
 
   return {
-    async join(target: JoinTarget): Promise<Ack<RoomView>> {
+    async join(target: JoinTarget): Promise<JoinResult> {
       if (!socket.connected) {
         handlers.onConnection('connecting')
-        if (!(await connectOnce())) {
+        const result = await connect()
+        if (result !== 'connected') {
           socket.disconnect()
           handlers.onConnection('idle')
-          return { ok: false, code: 'invalid', error: 'サーバーに接続できませんでした' }
+          return result === 'cancelled'
+            ? { ok: false, code: 'cancelled', error: '接続をやめました' }
+            : { ok: false, code: 'invalid', error: 'サーバーに接続できませんでした。時間をおいてもう一度お試しください' }
         }
       }
       const result = await emitJoin(target)
@@ -161,6 +202,11 @@ export function createOnlineClient(handlers: OnlineHandlers) {
         handlers.onRoom(result.data)
       }
       return result
+    },
+
+    /** サーバーの起動を待っている入室をやめる */
+    cancelJoin(): void {
+      cancelConnect?.()
     },
 
     async leave(): Promise<void> {

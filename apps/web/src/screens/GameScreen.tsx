@@ -1,5 +1,5 @@
 import { LayoutGroup } from 'motion/react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CardId, Cell } from '@srm/game-core'
 import { Badge } from '../components/Badge'
 import { Board } from '../components/Board'
@@ -18,9 +18,37 @@ import { CutinLayer } from '../components/fx/CutinLayer'
 import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
+import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
-import { RotateIcon, SparkleIcon } from '../ui/icons'
+import { RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
 import { directionLabel } from '../ui/labels'
+
+/** 席の並びの両端に置く、自分の位置。両端とも自分で、一周してつながっていることを表す */
+function YouCap({ active }: { active: boolean }) {
+  return (
+    <div aria-hidden="true" className="flex shrink-0 items-center">
+      <span
+        className={cx(
+          'rounded-full border px-1 py-2 text-xs font-bold leading-none tracking-widest [writing-mode:vertical-rl]',
+          active ? 'border-primary-500 bg-primary-500 text-white' : 'border-primary-200 bg-primary-50 text-primary-700',
+        )}
+      >
+        あなた
+      </span>
+    </div>
+  )
+}
+
+/** 席と席の間の、手番が回る向き。向きが変わったら回して見せる */
+function FlowArrow({ direction }: { direction: 1 | -1 }) {
+  return (
+    <div aria-hidden="true" className="flex shrink-0 items-center text-primary-500">
+      <span key={direction} className="fx-spin-in">
+        <TurnArrowIcon direction={direction} className="h-5 w-5" strokeWidth={2.5} />
+      </span>
+    </div>
+  )
+}
 
 /**
  * 対戦画面。見るのは自分の視点(PlayerView)だけなので、ソロでもオンラインでも同じ画面を使う。
@@ -100,6 +128,9 @@ export function GameScreen() {
   const seat = view.seatOrder.indexOf(you)
   const nextPlayer = view.seatOrder[(seat + 1) % view.seatOrder.length]
   const giveToName = nextPlayer ? nameOf(nextPlayer) : '次の人'
+  const seats = opponentsInSeatOrder(view)
+  const next = nextPlayerId(view)
+  const sevens = sevensPlaced(view)
 
   const toggle = (id: CardId) => {
     if (mode_.type === 'none') return
@@ -137,7 +168,7 @@ export function GameScreen() {
         : view.turnPlayerId === you
           ? 'あなたの手番'
           : view.turnPlayerId
-            ? `${nameOf(view.turnPlayerId)} の手番`
+            ? `${nameOf(view.turnPlayerId)} の手番${next === you ? '(次はあなた)' : ''}`
             : ''
   const isTurn = (id: string) => view.phase !== 'ended' && !setup && view.turnPlayerId === id
 
@@ -170,8 +201,9 @@ export function GameScreen() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 px-4">
+      {/* スマホでは画面の高さが足りないので、上の帯は固定せず、場と手札の表示に高さを回す */}
+      <header className="z-30 border-b border-slate-200 bg-white md:sticky md:top-0">
+        <div className="mx-auto flex h-12 max-w-6xl items-center justify-between gap-3 px-4 md:h-14">
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
             {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
@@ -204,26 +236,50 @@ export function GameScreen() {
             </Button>
           </div>
         </div>
-        <ConnectionBanner />
+        <div className="hidden md:block">
+          <ConnectionBanner />
+        </div>
       </header>
 
       <LayoutGroup>
-        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 md:py-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
-          <main className="min-w-0 space-y-4">
-            <section aria-label="対戦相手" className="-mx-4 overflow-x-auto px-4 pb-1">
-              <div className="flex gap-3">
-                {view.opponents.map((opponent) => (
-                  <OpponentSeat key={opponent.id} opponent={opponent} isTurn={isTurn(opponent.id)} />
+        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-2 sm:py-4 md:py-6 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
+          <main className="min-w-0 space-y-2 sm:space-y-4">
+            {/* 席は自分の次の人から手番の順に並べ、両端の「あなた」とつないで一周を表す */}
+            <section
+              aria-label={`対戦相手(左から、あなたの次の席の順。手番は${directionLabel(view.direction)})`}
+              className="-mx-4 overflow-x-auto px-4 pb-1"
+            >
+              <div className="flex items-stretch gap-1">
+                <YouCap active={isTurn(you)} />
+                {seats.map((opponent) => (
+                  <Fragment key={opponent.id}>
+                    <FlowArrow direction={view.direction} />
+                    <OpponentSeat
+                      opponent={opponent}
+                      isTurn={isTurn(opponent.id)}
+                      isNext={next === opponent.id}
+                      sevens={
+                        view.pending?.type === 'giveSevens'
+                          ? {
+                              count: sevens.get(opponent.id) ?? 0,
+                              choosing: view.pending.waitingFor.includes(opponent.id),
+                            }
+                          : undefined
+                      }
+                    />
+                  </Fragment>
                 ))}
+                <FlowArrow direction={view.direction} />
+                <YouCap active={isTurn(you)} />
               </div>
             </section>
 
             <section
               ref={boardRef}
               aria-label="場"
-              className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm md:p-5"
+              className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3 md:p-5"
             >
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 sm:mb-2">
                 <h2 className="text-sm font-semibold text-slate-900">場</h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge>
@@ -255,6 +311,10 @@ export function GameScreen() {
         </div>
 
         <div className="sticky bottom-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+          {/* スマホでは上の帯が固定されないので、切断の知らせは操作パネルに出す */}
+          <div className="md:hidden">
+            <ConnectionBanner />
+          </div>
           {mode_.type !== 'none' && <div aria-hidden="true" className="fx-turn-line" />}
           <div className="mx-auto max-w-6xl space-y-2 px-4 py-2 md:space-y-3 md:py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">

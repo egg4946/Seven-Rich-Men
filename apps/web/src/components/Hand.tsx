@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { CardId, PlayerView } from '@srm/game-core'
+import { handOverlap } from '../game/handLayout'
 import { playableCards, type SelectionMode } from '../game/selection'
+import { cx } from '../ui/cx'
 import { HandCard, type CardEnter } from './PlayingCard'
 
 export function Hand({
@@ -35,11 +37,39 @@ export function Hand({
     return { delay: shown ? 0 : Math.min(dealt++ * 0.04, 0.8) }
   }
 
+  // スマホで手札が多いときは、カードを少し重ねて2行に収める(3行になると操作パネルが場を覆う)。
+  // 横スクロールにしないのは、上へのスワイプで持ち上げたカードが切れて見えるのと、手札を一度に見渡せなくなるため
+  const groupRef = useRef<HTMLDivElement>(null)
+  const [overlap, setOverlap] = useState(0)
+  useLayoutEffect(() => {
+    const group = groupRef.current
+    if (!group) return
+    const measure = () => {
+      const card = group.firstElementChild
+      const cardWidth = card instanceof HTMLElement ? card.offsetWidth : 0
+      const gap = Number.parseFloat(getComputedStyle(group).rowGap) || 0
+      setOverlap(handOverlap(hand.length, group.clientWidth, cardWidth, gap))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(group)
+    return () => observer.disconnect()
+  }, [hand.length])
+
+  const overlapStyle = overlap > 0 ? ({ '--hand-overlap': `${overlap}px`, paddingLeft: overlap } as CSSProperties) : undefined
+
   return (
     <div
+      ref={groupRef}
       role="group"
       aria-label={`あなたの手札 ${hand.length}枚`}
-      className="flex min-h-18 flex-wrap justify-center gap-1 pt-2 sm:gap-1.5 md:min-h-22 md:gap-2"
+      style={overlapStyle}
+      className={cx(
+        'flex min-h-18 flex-wrap justify-center gap-y-1 pt-2 sm:gap-y-1.5 md:min-h-22 md:gap-y-2',
+        // 重ねるときは横の間隔を付けない(行の間隔は measure で使うので、どちらでも同じにする)
+        overlap > 0 ? '[&>*]:ml-[calc(-1*var(--hand-overlap))]' : 'gap-x-1 sm:gap-x-1.5 md:gap-x-2',
+      )}
     >
       {hand.length === 0 ? (
         <p className="self-center text-sm text-slate-500">手札はありません</p>

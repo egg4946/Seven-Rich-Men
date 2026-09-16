@@ -5,13 +5,25 @@ import { STATUS_LABEL } from '../ui/labels'
 import { Badge, STATUS_TONE } from './Badge'
 import { MiniCard } from './PlayingCard'
 
-export function OpponentSeat({ opponent, isTurn }: { opponent: OpponentView; isTurn: boolean }) {
+export function OpponentSeat({
+  opponent,
+  isTurn,
+  isNext = false,
+  sevens,
+}: {
+  opponent: OpponentView
+  isTurn: boolean
+  /** 今の手番の次に回ってくる */
+  isNext?: boolean
+  /** 7渡しの間だけ渡す: 置いた7の枚数と、まだ渡すカードを選んでいるか */
+  sevens?: { count: number; choosing: boolean }
+}) {
   const out = opponent.status !== 'playing'
   // パス・出したカードなど、この人が今したことを一瞬だけ席の上に出す(内容はログと通知にもある)
   const pop = useFx((s) => s.seatPops[opponent.id])
   return (
     <article
-      aria-label={`${opponent.name}${isTurn ? '(手番)' : ''}`}
+      aria-label={`${opponent.name}${isTurn ? '(手番)' : isNext ? '(次の手番)' : ''}`}
       className={cx(
         'relative min-w-36 flex-1 rounded-xl border px-3 py-1.5 leading-normal shadow-sm transition-colors md:min-w-40 md:py-2',
         isTurn ? 'border-primary-500 ring-2 ring-primary-500/30' : 'border-slate-200',
@@ -34,6 +46,8 @@ export function OpponentSeat({ opponent, isTurn }: { opponent: OpponentView; isT
           <span key={opponent.status} className="fx-stamp inline-flex">
             <Badge tone={STATUS_TONE[opponent.status]}>{STATUS_LABEL[opponent.status]}</Badge>
           </span>
+        ) : isNext ? (
+          <Badge className="border border-dashed border-slate-300 bg-white">次</Badge>
         ) : null}
       </div>
 
@@ -45,9 +59,30 @@ export function OpponentSeat({ opponent, isTurn }: { opponent: OpponentView; isT
           </dd>
         </div>
         <div className="flex gap-1">
-          <dt>パス残り</dt>
+          {/* スマホでは1行に収めて席を低くする */}
+          <dt>
+            パス<span className="max-sm:hidden">残り</span>
+          </dt>
           <dd className="font-semibold text-slate-900">{opponent.passesLeft}</dd>
         </div>
+        {sevens && (
+          // 7渡しの間だけ、この人が7を何枚出して何枚渡すのかを出しておく
+          <div className="flex gap-1">
+            <dt>7渡し</dt>
+            <dd className="font-semibold text-slate-900">
+              {sevens.count === 0 ? (
+                'なし'
+              ) : (
+                <>
+                  {sevens.count}枚
+                  <span className={cx('ml-1 font-normal', sevens.choosing ? 'text-amber-700' : 'text-emerald-700')}>
+                    {sevens.choosing ? '選択中' : '選択済み'}
+                  </span>
+                </>
+              )}
+            </dd>
+          </div>
+        )}
         {opponent.skips > 0 && (
           <div className="flex gap-1">
             <dt>スキップ</dt>

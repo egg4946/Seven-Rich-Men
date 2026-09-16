@@ -8,6 +8,7 @@ import {
   type JokerUse,
   type SelectionMode,
 } from '../game/selection'
+import { sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
 import { AlertIcon } from '../ui/icons'
 import { RANKS, cardName, rankLabel, type NameOf } from '../ui/labels'
@@ -18,12 +19,15 @@ const QUICK_HINT = 'ダブルクリックか上へスワイプでも出せます
 
 function Panel({
   title,
+  sameAsStatus = false,
   description,
   warning,
   actions,
   children,
 }: {
   title: string
+  /** 見出しが、操作パネルの上の行(手番の表示)と同じ。スマホでは高さを節約するため見せない */
+  sameAsStatus?: boolean
   description?: ReactNode
   warning?: string
   actions?: ReactNode
@@ -34,8 +38,9 @@ function Panel({
       aria-label={title}
       className="rounded-xl border border-slate-200 bg-white px-3 py-2 leading-normal md:px-4 md:py-3"
     >
-      <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
-      {description && <p className="mt-0.5 text-sm text-body">{description}</p>}
+      <h2 className={cx('text-sm font-semibold text-slate-900', sameAsStatus && 'max-md:sr-only')}>{title}</h2>
+      {/* スマホでは説明を小さくして、操作パネルが場を覆わないようにする */}
+      {description && <p className="mt-0.5 text-xs text-body md:text-sm">{description}</p>}
       {warning && (
         <p
           role="alert"
@@ -100,12 +105,24 @@ export function DecisionPanel({
   if (pending) {
     switch (pending.type) {
       case 'giveSevens': {
-        if (mode.type !== 'give') return <Waiting text="ほかのプレイヤーが渡すカードを選んでいます" />
+        if (mode.type !== 'give') {
+          const placed = sevensPlaced(view).get(me) ?? 0
+          return (
+            <Waiting
+              text={
+                placed > 0
+                  ? `${giveToName} に渡すカードを選びました。ほかの人が選び終わるのを待っています`
+                  : 'あなたは7を出していないので、渡すカードはありません。7を出した人が、次の人に渡すカードを選んでいます'
+              }
+            />
+          )
+        }
         const ready = selected.length === mode.count
         return (
           <Panel
             title="7渡し"
-            description={`${giveToName} に渡すカードを${mode.count}枚選んでください(${selected.length}/${mode.count})`}
+            sameAsStatus
+            description={`7を${mode.count}枚出したので、${giveToName} に渡すカードを${mode.count}枚選んでください(${selected.length}/${mode.count})`}
             actions={
               <Button disabled={!ready} onClick={() => act({ type: 'GIVE_SEVENS', playerId: me, cards: selected })}>
                 {mode.count}枚を渡す
@@ -289,6 +306,7 @@ function TurnActions({
   return (
     <Panel
       title="あなたの手番"
+      sameAsStatus
       description={description}
       warning={warning}
       actions={
@@ -300,7 +318,11 @@ function TurnActions({
           )}
           {declares.map((action) => (
             <Button key={action.type === 'DECLARE' ? action.effect : ''} variant="secondary" onClick={() => act(action)}>
-              {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? 'ろくろっくび(6を2枚公開)' : '救急車(9を2枚公開)'}
+              {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? 'ろくろっくび' : '救急車'}
+              {/* スマホではボタンを1行に収めるため、公開するカードは省く(説明は「ルール」にある) */}
+              <span className="max-md:hidden">
+                {action.type === 'DECLARE' && action.effect === 'rokurokubi' ? '(6を2枚公開)' : '(9を2枚公開)'}
+              </span>
             </Button>
           ))}
           {confirmingPass ? (

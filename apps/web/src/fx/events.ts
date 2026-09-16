@@ -1,4 +1,5 @@
-import { cardId, rankOf, type GameEvent, type PlayerId, type RevealEffect } from '@srm/game-core'
+import { cardId, rankOf, type GameEvent, type PlayerId, type PlayerView, type RevealEffect } from '@srm/game-core'
+import { sevensPlaced } from '../game/turnOrder'
 import { DEFEAT_REASON, EFFECT_NAME, cardName, rankLabel, type NameOf } from '../ui/labels'
 
 /**
@@ -8,6 +9,7 @@ import { DEFEAT_REASON, EFFECT_NAME, cardName, rankLabel, type NameOf } from '..
 
 export type CutinKind =
   | 'start'
+  | 'sevens'
   | 'skip'
   | 'slash'
   | 'reverse'
@@ -67,6 +69,27 @@ const DECLARE_CUTIN: Record<RevealEffect, Pick<CutinSpec, 'tone' | 'sub'>> = {
 
 export function startCutin(players: number): CutinSpec {
   return { kind: 'start', tone: 'primary', title: 'GAME START', sub: `${players}人対戦` }
+}
+
+/**
+ * GAME START に続けて出す、7渡しの説明。最初に全員の7が場に置かれるが、それだけでは
+ * なぜカードを渡すのかが分からないので、自分が何枚出して誰に何枚渡すのかを示す。
+ */
+export function sevensCutin(view: PlayerView, name: NameOf): CutinSpec {
+  const you = view.you.id
+  const placed = sevensPlaced(view).get(you) ?? 0
+  const seat = view.seatOrder.indexOf(you)
+  const next = view.seatOrder[(seat + 1) % view.seatOrder.length]
+  return {
+    kind: 'sevens',
+    tone: 'emerald',
+    title: '7渡し',
+    sub:
+      placed > 0 && next
+        ? `7を${placed}枚出した → ${name(next)} に${placed}枚渡す`
+        : '7を出した人は、その枚数だけ次の人にカードを渡す',
+    mine: placed > 0,
+  }
 }
 
 export function cutinsFor(events: GameEvent[], name: NameOf, youId: PlayerId): CutinSpec[] {

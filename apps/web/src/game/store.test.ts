@@ -7,6 +7,8 @@ import { useGameStore } from './store'
 const online = vi.hoisted(() => ({
   handlers: null as OnlineHandlers | null,
   act: vi.fn(async () => ({ ok: true, data: null })),
+  cancelJoin: vi.fn(),
+  saveLastRoom: vi.fn(),
 }))
 
 vi.mock('../online/client', () => ({
@@ -14,6 +16,7 @@ vi.mock('../online/client', () => ({
     online.handlers = handlers
     return {
       join: async () => ({ ok: true, data: null }),
+      cancelJoin: online.cancelJoin,
       leave: async () => {},
       settings: async () => ({ ok: true, data: null }),
       start: async () => ({ ok: true, data: null }),
@@ -21,7 +24,7 @@ vi.mock('../online/client', () => ({
     }
   },
   loadLastRoom: () => null,
-  saveLastRoom: () => {},
+  saveLastRoom: online.saveLastRoom,
 }))
 
 function roomOf(matchId: string): RoomView {
@@ -56,6 +59,15 @@ beforeEach(() => {
 afterEach(async () => {
   await useGameStore.getState().leaveRoom()
   vi.useRealTimers()
+})
+
+describe('入室', () => {
+  it('サーバーの起動待ちをやめたら、リロード後に入り直す部屋も忘れる', () => {
+    online.saveLastRoom.mockClear()
+    useGameStore.getState().cancelJoin()
+    expect(online.cancelJoin).toHaveBeenCalledTimes(1)
+    expect(online.saveLastRoom).toHaveBeenCalledWith(null)
+  })
 })
 
 describe('オンライン対戦の受信', () => {

@@ -67,6 +67,8 @@ function applyLevel(level: FxLevel): void {
 
 function durationOf(spec: CutinSpec, level: FxLevel): number {
   if (MINOR_KINDS.has(spec.kind)) return level === 'full' ? 900 : 700
+  // 7渡しは、なぜカードを渡すのかを読んでもらうので長めに出す
+  if (spec.kind === 'sevens') return level === 'full' ? 2200 : 1600
   if (level !== 'full') return 800
   return spec.kind === 'finish' || spec.kind === 'gameEnd' || spec.kind === 'bomb' ? 1400 : 1100
 }

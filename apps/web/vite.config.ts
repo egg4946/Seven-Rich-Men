@@ -19,6 +19,7 @@ export default defineConfig({
     // スマホから LAN 経由(http://<PCのIP>:5173)で開いても、同じ経路でサーバーにつながる
     proxy: {
       '/socket.io': { target: `http://localhost:${serverPort}`, ws: true },
+      '/healthz': { target: `http://localhost:${serverPort}` },
     },
   },
 })
