@@ -5,8 +5,10 @@ import { Button } from '../components/Button'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { ConnectionBanner } from '../components/ConnectionBanner'
 import { RulesDialog } from '../components/RulesDialog'
+import { SeriesSettings } from '../components/SeriesSettings'
 import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
+import { roundsLabel } from '../ui/labels'
 
 const SEAT_OPTIONS = Array.from({ length: MAX_SEATS - MIN_SEATS + 1 }, (_, i) => i + MIN_SEATS)
 
@@ -143,6 +145,15 @@ export function LobbyScreen() {
               </div>
             </fieldset>
           </div>
+          <div className="mt-4">
+            <SeriesSettings
+              idPrefix="lobby"
+              value={room.settings}
+              players={room.settings.seats}
+              disabled={!isHost || room.phase === 'playing'}
+              onChange={(rules) => void updateRoomSettings({ ...room.settings, ...rules })}
+            />
+          </div>
         </section>
 
         <div className="mt-6">
@@ -153,7 +164,7 @@ export function LobbyScreen() {
               disabled={busy || room.phase === 'playing'}
               onClick={() => void startOnlineGame()}
             >
-              対戦をはじめる({room.settings.seats}人戦)
+              対戦をはじめる({room.settings.seats}人戦・{roundsLabel(room.settings.rounds)})
             </Button>
           ) : (
             <p role="status" className="rounded-xl border border-slate-200 bg-gray-50 px-4 py-3 text-center text-sm text-body">

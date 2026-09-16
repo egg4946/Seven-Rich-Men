@@ -29,6 +29,7 @@ export function timeoutAction(state: GameState, id: PlayerId): Action | null {
     case 'fourStop':
     case 'jokerReaction':
       return { type: 'REACT', playerId: id, effect: 'skip' }
+    case 'exchange':
     case 'giveSevens':
     case 'bombRank':
     case 'tenDiscard':
@@ -43,7 +44,7 @@ export function cpuDelayMs(state: GameState, random: () => number = Math.random)
   const [min, max] =
     type === 'fourStop' || type === 'jokerReaction'
       ? [500, 1000]
-      : type === 'giveSevens'
+      : type === 'giveSevens' || type === 'exchange'
         ? [700, 1500]
         : [700, 1200]
   return Math.round(min + (max - min) * random())

@@ -1,7 +1,7 @@
 import { LayoutGroup } from 'motion/react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { CardId, Cell } from '@srm/game-core'
-import { Badge } from '../components/Badge'
+import { Badge, TITLE_TONE } from '../components/Badge'
 import { Board } from '../components/Board'
 import { Button } from '../components/Button'
 import { ConnectionBanner } from '../components/ConnectionBanner'
@@ -21,7 +21,7 @@ import { useGameStore } from '../game/store'
 import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
 import { RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
-import { directionLabel } from '../ui/labels'
+import { TITLE_LABEL, directionLabel, roundProgress } from '../ui/labels'
 
 /** 席の並びの両端に置く、自分の位置。両端とも自分で、一周してつながっていることを表す */
 function YouCap({ active }: { active: boolean }) {
@@ -64,6 +64,9 @@ export function GameScreen() {
   const leaveRoom = useGameStore((s) => s.leaveRoom)
   const startOnlineGame = useGameStore((s) => s.startOnlineGame)
   const showLobby = useGameStore((s) => s.showLobby)
+  const series = useGameStore((s) => s.series)
+  const nextRound = useGameStore((s) => s.nextRound)
+  const finishSeries = useGameStore((s) => s.finishSeries)
 
   const [selected, setSelected] = useState<CardId[]>([])
   /** ジョーカーを置く位置として選んだマス(一緒に出すカードを選ぶとき) */
@@ -134,13 +137,20 @@ export function GameScreen() {
 
   const toggle = (id: CardId) => {
     if (mode_.type === 'none') return
+    // 交換で必ず渡すカード・渡せないカードは選び直せない
+    if (mode_.type === 'exchange' && !mode_.choices.includes(id)) return
     setJokerCell(null)
     setSelected((current) => {
       if (current.includes(id)) return current.filter((x) => x !== id)
       if (mode_.type === 'give') return current.length >= mode_.count ? current : [...current, id]
+      if (mode_.type === 'exchange') {
+        if (mode_.pick === 1) return [id]
+        return current.length >= mode_.pick ? current : [...current, id]
+      }
       return [id]
     })
   }
+  const handSelected = mode_.type === 'exchange' ? [...mode_.fixed, ...selected] : selected
 
   /** ダブルクリック・上スワイプ。確かめが要る手は、選択して案内を出すだけにする */
   const playNow = (id: CardId) => {
@@ -159,11 +169,19 @@ export function GameScreen() {
     else setJokerCell(mark.cell)
   }
 
-  const setup = view.pending?.type === 'giveSevens'
+  const exchanging = view.pending?.type === 'exchange'
+  const setup = view.pending?.type === 'giveSevens' || exchanging
+  const multiRound = !!series && series.rules.rounds !== 1
+  const seriesOngoing = multiRound && !series.finished
+  const myTitle = view.titles?.[you]
   const turnText =
     view.phase === 'ended'
-      ? '対戦終了'
-      : setup
+      ? multiRound && seriesOngoing
+        ? 'ラウンド終了'
+        : '対戦終了'
+      : exchanging
+        ? 'カード交換'
+        : setup
         ? '7渡し'
         : view.turnPlayerId === you
           ? 'あなたの手番'
@@ -178,8 +196,26 @@ export function GameScreen() {
     else leaveSolo()
   }
 
+  // ラウンドの合間の操作。オンラインでは部屋主だけ(部屋主が切断中なら、対戦に参加している人も)
+  const hostAway = !!room && !room.members.some((m) => m.id === room.hostId && m.connected)
+  const canControl = !online || isHost || hostAway
+  const roundActions = seriesOngoing ? (
+    canControl ? (
+      <>
+        {series.rules.rounds === 'endless' && (
+          <Button variant="secondary" disabled={busy} onClick={finishSeries}>
+            ここで終了
+          </Button>
+        )}
+        <Button disabled={busy} onClick={nextRound}>
+          次のラウンドへ
+        </Button>
+      </>
+    ) : null
+  ) : null
+
   // 対戦が終わったあとの操作。オンラインでは次の対戦を始められるのは部屋主だけ
-  const endActions = online ? (
+  const endActions = roundActions ?? (online ? (
     <>
       {isHost && (
         <Button disabled={busy} onClick={() => void startOnlineGame()}>
@@ -197,7 +233,14 @@ export function GameScreen() {
       </Button>
       <Button onClick={rematch}>もう一度遊ぶ</Button>
     </>
-  )
+  ))
+  const endDescription = seriesOngoing
+    ? canControl
+      ? undefined
+      : '部屋主が次のラウンドを始めるのを待っています。'
+    : online && !isHost
+      ? '部屋主が次の対戦を始めるのを待っています。'
+      : undefined
 
   return (
     <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
@@ -207,6 +250,7 @@ export function GameScreen() {
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
             {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
+            {multiRound && <Badge tone="accent">{roundProgress(series)}</Badge>}
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -227,7 +271,7 @@ export function GameScreen() {
               variant="subtle"
               size="sm"
               onClick={() => {
-                if (view.phase !== 'ended') setLeaveOpen(true)
+                if (view.phase !== 'ended' || seriesOngoing) setLeaveOpen(true)
                 else if (online) showLobby()
                 else leaveSolo()
               }}
@@ -262,6 +306,17 @@ export function GameScreen() {
                         view.pending?.type === 'giveSevens'
                           ? {
                               count: sevens.get(opponent.id) ?? 0,
+                              choosing: view.pending.waitingFor.includes(opponent.id),
+                            }
+                          : undefined
+                      }
+                      title={view.titles?.[opponent.id]}
+                      exchange={
+                        view.pending?.type === 'exchange'
+                          ? {
+                              count:
+                                view.pending.pairs.find((p) => p.upper === opponent.id || p.lower === opponent.id)
+                                  ?.count ?? 0,
                               choosing: view.pending.waitingFor.includes(opponent.id),
                             }
                           : undefined
@@ -321,7 +376,17 @@ export function GameScreen() {
               <p aria-live="polite" className="text-sm font-semibold text-slate-900">
                 {turnText}
               </p>
-              <dl className="flex gap-3 text-xs text-body">
+              <dl className="flex items-center gap-3 text-xs text-body">
+                {myTitle && (
+                  <div className="flex">
+                    <dt className="sr-only">あなたの身分</dt>
+                    <dd>
+                      <Badge tone={TITLE_TONE[myTitle]} className="px-2 py-0">
+                        {TITLE_LABEL[myTitle]}
+                      </Badge>
+                    </dd>
+                  </div>
+                )}
                 <div className="flex gap-1">
                   <dt>パス残り</dt>
                   <dd className="font-semibold text-slate-900">{view.you.passesLeft}</dd>
@@ -345,10 +410,10 @@ export function GameScreen() {
               act={act}
               nameOf={nameOf}
               giveToName={giveToName}
-              endDescription={online && !isHost ? '部屋主が次の対戦を始めるのを待っています。' : undefined}
+              endDescription={endDescription}
               endActions={endActions}
             />
-            <Hand view={view} mode={mode_} selected={selected} onToggle={toggle} onPlay={playNow} />
+            <Hand view={view} mode={mode_} selected={handSelected} onToggle={toggle} onPlay={playNow} />
           </div>
         </div>
       </LayoutGroup>
@@ -374,13 +439,14 @@ export function GameScreen() {
       >
         <p>
           {online
-            ? 'この対戦の残りは、CPUがあなたの代わりに打ちます。対戦が終わるまで、この部屋には戻れません。'
+            ? `この対戦の残り${multiRound ? '(残りのラウンドも)' : ''}は、CPUがあなたの代わりに打ちます。対戦が終わるまで、この部屋には戻れません。`
             : 'この対戦の進行は保存されません。'}
         </p>
       </Dialog>
       <ResultDialog
         open={view.phase === 'ended' && resultOpen && fxIdle}
         view={view}
+        series={series}
         onClose={() => setResultOpen(false)}
         actions={endActions}
       />

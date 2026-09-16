@@ -220,6 +220,10 @@ export function createOnlineClient(handlers: OnlineHandlers) {
 
     start: () => call<null>(() => withTimeout().emitWithAck('room:start')),
 
+    next: () => call<null>(() => withTimeout().emitWithAck('room:next')),
+
+    end: () => call<null>(() => withTimeout().emitWithAck('room:end')),
+
     act: (payload: ActPayload) => call<null>(() => withTimeout().emitWithAck('game:act', payload)),
   }
 }

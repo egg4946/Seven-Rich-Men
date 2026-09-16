@@ -20,6 +20,8 @@ vi.mock('../online/client', () => ({
       leave: async () => {},
       settings: async () => ({ ok: true, data: null }),
       start: async () => ({ ok: true, data: null }),
+      next: async () => ({ ok: true, data: null }),
+      end: async () => ({ ok: true, data: null }),
       act: online.act,
     }
   },
@@ -34,8 +36,9 @@ function roomOf(matchId: string): RoomView {
     you: 'p1',
     hostId: 'p1',
     members: [{ id: 'p1', name: 'A', isHost: true, connected: true, seated: true }],
-    settings: { seats: 3, cpuLevel: 'normal' },
+    settings: { seats: 3, cpuLevel: 'normal', rounds: 1, seating: 'fixed', fourPlayerExchange: 'double' },
     matchId,
+    series: null,
   }
 }
 

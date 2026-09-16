@@ -71,6 +71,16 @@ export class RoomManager {
     return context ? context.room.start(context.memberId) : notInRoom()
   }
 
+  next(socketId: string): Ack<null> {
+    const context = this.context(socketId)
+    return context ? context.room.next(context.memberId) : notInRoom()
+  }
+
+  end(socketId: string): Ack<null> {
+    const context = this.context(socketId)
+    return context ? context.room.end(context.memberId) : notInRoom()
+  }
+
   act(socketId: string, payload: ActPayload): Ack<null> {
     const context = this.context(socketId)
     return context ? context.room.act(context.memberId, payload.matchId, payload.version, payload.action) : notInRoom()

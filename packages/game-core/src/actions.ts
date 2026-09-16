@@ -15,7 +15,7 @@ import {
   removeSkip,
   unusedCards,
 } from './flow.js'
-import { resolveGiveSevens } from './setup.js'
+import { resolveExchange, resolveGiveSevens } from './setup.js'
 import {
   JOKER,
   RANK,
@@ -36,6 +36,8 @@ import {
  */
 export function applyToDraft(state: GameState, action: Action): void {
   switch (action.type) {
+    case 'EXCHANGE':
+      return exchange(state, action.playerId, action.cards)
     case 'GIVE_SEVENS':
       return giveSevens(state, action.playerId, action.cards)
     case 'DECLARE':
@@ -55,6 +57,18 @@ export function applyToDraft(state: GameState, action: Action): void {
     case 'JOKER_TAKE':
       return jokerTake(state, action.playerId, action.take)
   }
+}
+
+// --- カード交換 ---------------------------------------------------------
+
+function exchange(state: GameState, playerId: PlayerId, cards: CardId[]): void {
+  const pending = state.pending
+  if (pending?.type !== 'exchange') return
+  pending.chosen[playerId] = cards.slice()
+  const waiting = pending.pairs.some(
+    (pair) => pending.chosen[pair.upper] === undefined || pending.chosen[pair.lower] === undefined,
+  )
+  if (!waiting) resolveExchange(state)
 }
 
 // --- 7渡し -------------------------------------------------------------

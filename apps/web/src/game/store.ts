@@ -1,15 +1,20 @@
 import { create } from 'zustand'
 import {
   applyAction,
+  endSeries,
+  nextRound,
+  recordRound,
+  standings,
   viewFor,
   whoMustAct,
   type Action,
   type GameEvent,
   type GameState,
   type PlayerView,
+  type Series,
 } from '@srm/game-core'
-import type { GameUpdate, RoomSettings, RoomView } from '@srm/protocol'
-import { sevensCutin, startCutin } from '../fx/events'
+import type { GameUpdate, RoomSettings, RoomView, SeriesView } from '@srm/protocol'
+import { exchangeCutin, sevensCutin, startCutin } from '../fx/events'
 import { useFx } from '../fx/store'
 import {
   createOnlineClient,
@@ -24,9 +29,10 @@ import {
   HUMAN_ID,
   cpuActors,
   cpuDelayMs,
-  createSoloGame,
+  createSoloRound,
   decideCpu,
   decisionKey,
+  startSoloSeries,
   timeoutAction,
   type SoloSettings,
 } from './controller'
@@ -57,6 +63,8 @@ interface GameStore {
   game: GameState | null
   /** 画面が見るのはこれだけ。ソロでもオンラインでも同じ形 */
   view: PlayerView | null
+  /** ラウンドの進み具合とポイント。ソロでもオンラインでも同じ形 */
+  series: SeriesView | null
   room: RoomView | null
   connection: ConnectionState
   busy: boolean
@@ -67,6 +75,10 @@ interface GameStore {
 
   startSolo: (settings: SoloSettings) => void
   rematch: () => void
+  /** ラウンド制で、次のラウンドを始める */
+  nextRound: () => void
+  /** エンドレスを、ラウンドの合間に終える */
+  finishSeries: () => void
   leaveSolo: () => void
   /** 入室できなければエラーメッセージを返す(自分で接続をやめたときは null) */
   joinRoom: (playerName: string, roomName: string) => Promise<string | null>
@@ -83,7 +95,14 @@ interface GameStore {
 }
 
 const SETTINGS_KEY = 'srm:settings'
-const DEFAULT_SETTINGS: SoloSettings = { name: '', cpuCount: 3, level: 'normal' }
+const DEFAULT_SETTINGS: SoloSettings = {
+  name: '',
+  cpuCount: 3,
+  level: 'normal',
+  rounds: 1,
+  seating: 'fixed',
+  fourPlayerExchange: 'double',
+}
 
 function loadSettings(): SoloSettings {
   try {
@@ -94,6 +113,9 @@ function loadSettings(): SoloSettings {
       name: typeof parsed.name === 'string' ? parsed.name.slice(0, 12) : '',
       cpuCount: [2, 3, 4, 5].includes(Number(parsed.cpuCount)) ? Number(parsed.cpuCount) : 3,
       level: parsed.level === 'easy' ? 'easy' : 'normal',
+      rounds: parsed.rounds === 3 || parsed.rounds === 5 || parsed.rounds === 'endless' ? parsed.rounds : 1,
+      seating: parsed.seating === 'random' ? 'random' : 'fixed',
+      fourPlayerExchange: parsed.fourPlayerExchange === 'single' ? 'single' : 'double',
     }
   } catch {
     return DEFAULT_SETTINGS
@@ -133,13 +155,28 @@ function namesOfView(view: PlayerView): Map<string, string> {
   return new Map([[view.you.id, view.you.name], ...view.opponents.map((o) => [o.id, o.name] as [string, string])])
 }
 
-/** 対戦の始まりの演出。7渡しの選択中なら、なぜカードを渡すのかも続けて出す */
+function nameOfView(view: PlayerView): (id: string) => string {
+  const names = namesOfView(view)
+  return (id) => (id === view.you.id ? 'あなた' : (names.get(id) ?? id))
+}
+
+function seriesView(series: Series): SeriesView {
+  return { ...series, standings: standings(series) }
+}
+
+/**
+ * 対戦の始まりの演出。カード交換や7渡しの選択中なら、なぜカードを渡すのかも続けて出す
+ * (交換のあとの7渡しの説明は、交換が終わったときに出す)
+ */
 function playOpening(view: PlayerView): void {
   const fx = useFx.getState()
   fx.push(startCutin(view.seatOrder.length))
-  if (view.pending?.type !== 'giveSevens') return
-  const names = namesOfView(view)
-  fx.push(sevensCutin(view, (id) => (id === view.you.id ? 'あなた' : (names.get(id) ?? id))))
+  if (view.pending?.type === 'exchange') {
+    const spec = exchangeCutin(view, nameOfView(view))
+    if (spec) fx.push(spec)
+  } else if (view.pending?.type === 'giveSevens') {
+    fx.push(sevensCutin(view, nameOfView(view)))
+  }
 }
 
 let cpuTimers: ReturnType<typeof setTimeout>[] = []
@@ -167,13 +204,18 @@ export const useGameStore = create<GameStore>()((set, get) => {
     if (tone !== 'error') setTimeout(() => get().dismissToast(id), 5000)
   }
 
-  const announce = (events: GameEvent[], names: Map<string, string>, youId: string) => {
-    const nameOf = (id: string) => (id === youId ? 'あなた' : (names.get(id) ?? id))
+  const announce = (events: GameEvent[], view: PlayerView) => {
+    const youId = view.you.id
+    const nameOf = nameOfView(view)
     for (const event of events) {
       const toast = toastForEvent(event, nameOf, youId)
       if (toast) pushToast(toast.tone, toast.message)
     }
     useFx.getState().emit(events, nameOf, youId)
+    // 交換が終わると7が置かれて7渡しになるので、ここで7渡しの説明を出す
+    if (events.some((e) => e.type === 'CARDS_EXCHANGED') && view.pending?.type === 'giveSevens') {
+      useFx.getState().push(sevensCutin(view, nameOf))
+    }
   }
 
   const tick = () => {
@@ -206,7 +248,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     }
     const view = viewFor(result.state, HUMAN_ID)
     set({ game: result.state, view })
-    if (view) announce(result.state.log.slice(game.log.length), namesOfView(view), HUMAN_ID)
+    if (view) announce(result.state.log.slice(game.log.length), view)
     syncSolo()
     return true
   }
@@ -219,6 +261,8 @@ export const useGameStore = create<GameStore>()((set, get) => {
     if (game.phase === 'ended') {
       closeSoloTimer(now)
       stopClock()
+      const series = get().series
+      if (series) set({ series: seriesView(recordRound(series, game.ranking)) })
       return
     }
 
@@ -265,14 +309,17 @@ export const useGameStore = create<GameStore>()((set, get) => {
     // 通知を取りこぼして再戦をまたいでも、対戦IDが変われば前の対戦の画面を捨てる
     const startedNewGame = room.matchId !== null && room.matchId !== s.room?.matchId
 
+    // ラウンド制の途中(ラウンドの合間)は、リロードしても対戦の画面に戻す
+    const betweenRounds = room.phase === 'result' && !!room.series && !room.series.finished
     let screen: Screen
     if (room.phase === 'playing') screen = seated ? 'game' : 'lobby'
-    else if (room.phase === 'result') screen = s.screen === 'game' && seated ? 'game' : 'lobby'
+    else if (room.phase === 'result') screen = (s.screen === 'game' || betweenRounds) && seated ? 'game' : 'lobby'
     else screen = 'lobby'
 
     set({
       room,
       screen,
+      series: room.series,
       ...(startedNewGame ? { gameId: s.gameId + 1, view: null, timer: null, toasts: [] } : {}),
     })
     if (startedNewGame) useFx.getState().clear()
@@ -297,7 +344,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     })
     // 入室・再接続した直後は、過去の出来事を通知し直さない
     if (previous) {
-      announce(update.view.log.slice(previous.log.length), namesOfView(update.view), update.view.you.id)
+      announce(update.view.log.slice(previous.log.length), update.view)
     } else if (isFreshGame(update.view) && claimStartCutin(update.matchId)) {
       playOpening(update.view)
     }
@@ -320,6 +367,31 @@ export const useGameStore = create<GameStore>()((set, get) => {
     return client
   }
 
+  /** ソロで series の今のラウンドを始める */
+  const beginSoloRound = (settings: SoloSettings, series: Series) => {
+    stopClock()
+    useFx.getState().clear()
+    const game = createSoloRound(settings, series)
+    set((s) => ({
+      screen: 'game',
+      mode: 'solo',
+      gameId: s.gameId + 1,
+      settings,
+      game,
+      view: viewFor(game, HUMAN_ID),
+      series: seriesView(series),
+      room: null,
+      toasts: [],
+      timer: null,
+      reserveLeftMs: TIMER.reserveMs,
+      now: Date.now(),
+    }))
+    const view = get().view
+    if (view) playOpening(view)
+    startTicker()
+    syncSolo()
+  }
+
   return {
     screen: 'title',
     mode: 'solo',
@@ -327,6 +399,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     settings: loadSettings(),
     game: null,
     view: null,
+    series: null,
     room: null,
     connection: 'idle',
     busy: false,
@@ -336,37 +409,48 @@ export const useGameStore = create<GameStore>()((set, get) => {
     now: Date.now(),
 
     startSolo(settings) {
-      stopClock()
-      useFx.getState().clear()
       saveSettings(settings)
-      const game = createSoloGame(settings)
-      set((s) => ({
-        screen: 'game',
-        mode: 'solo',
-        gameId: s.gameId + 1,
-        settings,
-        game,
-        view: viewFor(game, HUMAN_ID),
-        room: null,
-        toasts: [],
-        timer: null,
-        reserveLeftMs: TIMER.reserveMs,
-        now: Date.now(),
-      }))
-      const view = get().view
-      if (view) playOpening(view)
-      startTicker()
-      syncSolo()
+      beginSoloRound(settings, startSoloSeries(settings))
     },
 
     rematch() {
       get().startSolo(get().settings)
     },
 
+    nextRound() {
+      const { mode, series, settings, game } = get()
+      if (mode === 'solo') {
+        if (series && game?.phase === 'ended') beginSoloRound(settings, nextRound(series))
+        return
+      }
+      set({ busy: true })
+      void online()
+        .next()
+        .then((result) => {
+          set({ busy: false })
+          if (!result.ok) pushToast('error', result.error)
+        })
+    },
+
+    finishSeries() {
+      const { mode, series } = get()
+      if (mode === 'solo') {
+        if (series) set({ series: seriesView(endSeries(series)) })
+        return
+      }
+      set({ busy: true })
+      void online()
+        .end()
+        .then((result) => {
+          set({ busy: false })
+          if (!result.ok) pushToast('error', result.error)
+        })
+    },
+
     leaveSolo() {
       stopClock()
       useFx.getState().clear()
-      set({ screen: 'title', game: null, view: null, toasts: [], timer: null })
+      set({ screen: 'title', game: null, view: null, series: null, toasts: [], timer: null })
     },
 
     async joinRoom(playerName, roomName) {
@@ -374,7 +458,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
       useFx.getState().clear()
       const settings = { ...get().settings, name: playerName }
       saveSettings(settings)
-      set({ mode: 'online', busy: true, settings, game: null, view: null, room: null, timer: null, toasts: [] })
+      set({ mode: 'online', busy: true, settings, game: null, view: null, series: null, room: null, timer: null, toasts: [] })
       const target = { roomName, playerName: playerName || 'ゲスト' }
       const result = await online().join(target)
       set({ busy: false })
@@ -419,6 +503,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
         screen: 'title',
         room: null,
         view: null,
+        series: null,
         timer: null,
         toasts: [],
         connection: 'idle',

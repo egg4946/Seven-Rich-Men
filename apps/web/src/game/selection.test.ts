@@ -29,6 +29,7 @@ function viewOf(opts: { hands: CardId[][]; placed: CardId[]; turnIndex?: number 
   const state: GameState = {
     players,
     board,
+    titles: null,
     turnIndex: opts.turnIndex ?? 0,
     direction: 1,
     phase: 'turn',

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import type { CpuLevel } from '@srm/game-ai'
+import type { SeriesRules } from '@srm/game-core'
 import { LIMITS } from '@srm/protocol'
 import { Button } from '../components/Button'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
+import { SeriesSettings } from '../components/SeriesSettings'
 import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
 import { SLOW_CONNECT_MS, wakeServer } from '../online/client'
@@ -79,6 +81,11 @@ export function TitleScreen() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [cpuCount, setCpuCount] = useState(initial.cpuCount)
   const [level, setLevel] = useState<CpuLevel>(initial.level)
+  const [rules, setRules] = useState<SeriesRules>({
+    rounds: initial.rounds,
+    seating: initial.seating,
+    fourPlayerExchange: initial.fourPlayerExchange,
+  })
   const [rulesOpen, setRulesOpen] = useState(false)
 
   const submitJoin = async (event: FormEvent) => {
@@ -218,12 +225,16 @@ export function TitleScreen() {
             </fieldset>
           </div>
 
+          <div>
+            <SeriesSettings idPrefix="solo" value={rules} players={cpuCount + 1} onChange={setRules} />
+          </div>
+
           <Button
             variant="secondary"
             size="lg"
             className="w-full"
             disabled={busy}
-            onClick={() => startSolo({ name: name.trim(), cpuCount, level })}
+            onClick={() => startSolo({ name: name.trim(), cpuCount, level, ...rules })}
           >
             CPUと対戦する
           </Button>

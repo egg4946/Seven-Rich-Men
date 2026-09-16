@@ -1,6 +1,13 @@
-import { cardId, rankOf, type GameEvent, type PlayerId, type PlayerView, type RevealEffect } from '@srm/game-core'
+import {
+  cardId,
+  rankOf,
+  type GameEvent,
+  type PlayerId,
+  type PlayerView,
+  type RevealEffect,
+} from '@srm/game-core'
 import { sevensPlaced } from '../game/turnOrder'
-import { DEFEAT_REASON, EFFECT_NAME, cardName, rankLabel, type NameOf } from '../ui/labels'
+import { DEFEAT_REASON, EFFECT_NAME, TITLE_LABEL, cardName, rankLabel, type NameOf } from '../ui/labels'
 
 /**
  * ゲームの出来事を、画面の演出(カットイン・席の吹き出し)に変換する。React には依存しない。
@@ -10,6 +17,7 @@ import { DEFEAT_REASON, EFFECT_NAME, cardName, rankLabel, type NameOf } from '..
 export type CutinKind =
   | 'start'
   | 'sevens'
+  | 'exchange'
   | 'skip'
   | 'slash'
   | 'reverse'
@@ -89,6 +97,40 @@ export function sevensCutin(view: PlayerView, name: NameOf): CutinSpec {
         ? `7を${placed}枚出した → ${name(next)} に${placed}枚渡す`
         : '7を出した人は、その枚数だけ次の人にカードを渡す',
     mine: placed > 0,
+  }
+}
+
+/**
+ * 2ラウンド目以降の GAME START に続けて出す、カード交換の説明。
+ * 自分が誰と何枚交換するのか(交換しないのか)を示す。
+ */
+export function exchangeCutin(view: PlayerView, name: NameOf): CutinSpec | null {
+  if (view.pending?.type !== 'exchange') return null
+  const you = view.you.id
+  const pair = view.pending.pairs.find((p) => p.upper === you || p.lower === you)
+  const title = (id: PlayerId) => {
+    const t = view.titles?.[id]
+    return t ? TITLE_LABEL[t] : ''
+  }
+  if (!pair) {
+    return {
+      kind: 'exchange',
+      tone: 'violet',
+      title: 'カード交換',
+      sub: `あなたは${title(you) || '平民'}。交換はありません`,
+      mine: false,
+    }
+  }
+  const upper = pair.upper === you
+  const partner = upper ? pair.lower : pair.upper
+  return {
+    kind: 'exchange',
+    tone: 'violet',
+    title: 'カード交換',
+    sub: upper
+      ? `${title(you)}:${name(partner)} から強い${pair.count}枚をもらい、好きな${pair.count}枚を渡す`
+      : `${title(you)}:${name(partner)} に強い${pair.count}枚を渡し、${pair.count}枚もらう`,
+    mine: true,
   }
 }
 
@@ -188,6 +230,10 @@ export function seatPopsFor(events: GameEvent[], youId: PlayerId): SeatPopSpec[]
         break
       case 'SEVENS_GIVEN':
         put(event.from, `${event.count}枚渡した`, 'emerald')
+        break
+      case 'CARDS_EXCHANGED':
+        put(event.upper, `${event.count}枚交換`, 'violet')
+        put(event.lower, `${event.count}枚交換`, 'violet')
         break
       case 'JOKER_MOVED':
         put(event.to, 'ジョーカー獲得', 'gold')

@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import {
   applyAction,
+  canStartNextRound,
   createGame,
   cryptoRng,
   decisionKey,
+  endSeries,
+  nextRound,
+  recordRound,
+  seriesTitles,
   shuffle,
+  standings,
+  startSeries,
   viewFor,
   whoMustAct,
   type Action,
   type GameState,
   type PlayerSeed,
   type Rng,
+  type Series,
 } from '@srm/game-core'
 import { CPU_NAMES, cpuDelayMs, decideCpu, timeoutAction } from '@srm/game-ai'
 import {
@@ -65,7 +73,7 @@ interface HumanTimer {
 }
 
 /** 複数人が同時に答える場面 */
-const CONCURRENT_PENDING = new Set(['giveSevens', 'fourStop', 'jokerReaction'])
+const CONCURRENT_PENDING = new Set(['exchange', 'giveSevens', 'fourStop', 'jokerReaction'])
 
 function isConcurrent(state: GameState): boolean {
   return !!state.pending && CONCURRENT_PENDING.has(state.pending.type)
@@ -97,8 +105,18 @@ function fail<T>(code: ErrorCode, error: string): Ack<T> {
 export class Room {
   private readonly members = new Map<string, Member>()
   private hostId: string | null = null
-  private settings: RoomSettings = { seats: 4, cpuLevel: 'normal' }
+  private settings: RoomSettings = {
+    seats: 4,
+    cpuLevel: 'normal',
+    rounds: 1,
+    seating: 'fixed',
+    fourPlayerExchange: 'double',
+  }
   private game: GameState | null = null
+  /** 今の(または直前の)対戦のラウンドの進み具合 */
+  private series: Series | null = null
+  /** 対戦の席(人間とCPU)。「固定」ならこの順のまま、「毎ラウンドランダム」なら毎回並べ替える */
+  private seriesSeeds: PlayerSeed[] = []
   private matchId: string | null = null
   /** 開いている同時回答の受付が始まったときの version。受付がなければ null */
   private receptionVersion: number | null = null
@@ -119,6 +137,14 @@ export class Room {
   get phase(): RoomPhase {
     if (!this.game) return 'lobby'
     return this.game.phase === 'ended' ? 'result' : 'playing'
+  }
+
+  /**
+   * 席を空けてはいけない間か。対戦中に加えて、ラウンド制の途中(ラウンドの合間)も含む。
+   * この間は新しい人は入れず、切断・退室した人の席は CPU が代わりに操作する。
+   */
+  private get locked(): boolean {
+    return this.phase === 'playing' || (!!this.series && !this.series.finished)
   }
 
   get memberCount(): number {
@@ -155,7 +181,7 @@ export class Room {
       // 再接続。対戦中なら CPU の代打をやめて、本人に操作を戻す
       returning.sockets.add(socketId)
       this.cancelLobbyRemoval(returning.id)
-      if (this.phase !== 'playing') returning.name = this.uniqueName(playerName, returning.id)
+      if (!this.locked) returning.name = this.uniqueName(playerName, returning.id)
       this.reschedule()
       this.broadcastRoom()
       this.sendGameTo(returning.id)
@@ -163,7 +189,7 @@ export class Room {
       return ok(this.roomView(returning.id))
     }
 
-    if (this.phase === 'playing') return fail('in_progress', 'この部屋は対戦中です。終わってから入ってください')
+    if (this.locked) return fail('in_progress', 'この部屋は対戦中です。終わってから入ってください')
     if (this.members.size >= MAX_SEATS) return fail('room_full', `この部屋は満員です(${MAX_SEATS}人まで)`)
 
     const member: Member = {
@@ -186,7 +212,7 @@ export class Room {
     member.sockets.delete(socketId)
     if (member.sockets.size > 0) return
 
-    if (this.phase === 'playing' && this.seated.has(member.id)) {
+    if (this.locked && this.seated.has(member.id)) {
       // 対戦中は席を残し、戻るまで CPU が代わりに操作する(§4-5)
       this.reschedule()
     } else {
@@ -201,7 +227,7 @@ export class Room {
     const member = this.members.get(memberId)
     if (!member) return fail('not_found', '部屋に入っていません')
 
-    if (this.phase === 'playing' && this.seated.has(memberId)) {
+    if (this.locked && this.seated.has(memberId)) {
       // 対戦中に抜けた席は、最後まで CPU が操作する。同じトークンでは戻れない
       member.token = null
       member.sockets.clear()
@@ -219,10 +245,13 @@ export class Room {
 
   updateSettings(memberId: string, settings: RoomSettings): Ack<null> {
     if (memberId !== this.hostId) return fail('forbidden', '設定を変えられるのは部屋を作った人だけです')
-    if (this.phase === 'playing') return fail('in_progress', '対戦中は設定を変えられません')
+    if (this.locked) return fail('in_progress', '対戦中は設定を変えられません')
     this.settings = {
       seats: Math.min(MAX_SEATS, Math.max(MIN_SEATS, settings.seats, this.members.size)),
       cpuLevel: settings.cpuLevel,
+      rounds: settings.rounds,
+      seating: settings.seating,
+      fourPlayerExchange: settings.fourPlayerExchange,
     }
     this.broadcastRoom()
     return ok(null)
@@ -230,7 +259,7 @@ export class Room {
 
   start(memberId: string): Ack<null> {
     if (memberId !== this.hostId) return fail('forbidden', '開始できるのは部屋を作った人だけです')
-    if (this.phase === 'playing') return fail('in_progress', 'すでに対戦中です')
+    if (this.locked) return fail('in_progress', 'すでに対戦中です')
 
     // 切断したままの人はこの対戦に入れず、退室扱いにする
     for (const member of [...this.members.values()]) {
@@ -247,21 +276,69 @@ export class Room {
       })),
     ]
 
+    const { rounds, seating, fourPlayerExchange } = this.settings
+    // 人間同士が隣り合いやすくならないよう、席はランダムに並べる(「固定」はこの並びのまま続ける)
+    this.seriesSeeds = shuffle(seeds, (this.hooks.rng ?? cryptoRng)())
+    this.series = startSeries(
+      { rounds, seating, fourPlayerExchange },
+      seeds.map((seed) => seed.id),
+    )
+    this.seated.clear()
+    for (const member of humans) this.seated.add(member.id)
+    this.beginRound()
+    return ok(null)
+  }
+
+  /** ラウンド制で、次のラウンドを始める */
+  next(memberId: string): Ack<null> {
+    const { series } = this
+    if (!series || this.phase !== 'result' || !canStartNextRound(series)) {
+      return fail('invalid', '次のラウンドは始められません')
+    }
+    if (!this.canControl(memberId)) return fail('forbidden', '次のラウンドを始められるのは部屋主だけです')
+    this.series = nextRound(series)
+    this.beginRound()
+    return ok(null)
+  }
+
+  /** エンドレスを、ラウンドの合間に終える */
+  end(memberId: string): Ack<null> {
+    const { series } = this
+    if (!series || series.rules.rounds !== 'endless' || this.phase !== 'result' || series.finished) {
+      return fail('invalid', '今は終了できません')
+    }
+    if (!this.canControl(memberId)) return fail('forbidden', '終了できるのは部屋主だけです')
+    this.series = endSeries(series)
+    this.broadcastRoom()
+    this.scheduleRemovalOfAbsent()
+    return ok(null)
+  }
+
+  /**
+   * ラウンドの合間の操作(次へ・終了)ができるか。部屋主が切断・退室していると誰も進められなくなるので、
+   * そのときは対戦に参加している他の人にも任せる
+   */
+  private canControl(memberId: string): boolean {
+    if (memberId === this.hostId) return true
+    const host = this.hostId ? this.members.get(this.hostId) : undefined
+    return (!host || host.sockets.size === 0) && this.seated.has(memberId)
+  }
+
+  private beginRound(): void {
+    const { series } = this
+    if (!series) return
     this.clearGameTimers()
     const rng = (this.hooks.rng ?? cryptoRng)()
-    // 人間同士が隣り合いやすくならないよう、席はランダムに並べる
-    this.game = createGame({ players: shuffle(seeds, rng), rng })
+    const players =
+      series.round > 1 && series.rules.seating === 'random' ? shuffle(this.seriesSeeds, rng) : this.seriesSeeds
+    this.game = createGame({ players, rng, titles: seriesTitles(series) })
     this.matchId = randomUUID()
     this.receptionVersion = isConcurrent(this.game) ? this.game.version : null
-    this.seated.clear()
+    // 持ち時間はラウンドごとに戻す
     this.reserveLeft.clear()
-    for (const member of humans) {
-      this.seated.add(member.id)
-      this.reserveLeft.set(member.id, this.timing.timerReserveMs)
-    }
+    for (const id of this.seated) this.reserveLeft.set(id, this.timing.timerReserveMs)
     this.broadcastRoom()
     this.afterChange()
-    return ok(null)
   }
 
   // --- 対戦 -----------------------------------------------------------------
@@ -303,10 +380,17 @@ export class Room {
     this.reschedule()
     this.broadcastGame()
     if (this.game?.phase === 'ended') {
+      if (this.series) this.series = recordRound(this.series, this.game.ranking)
       this.broadcastRoom()
-      for (const member of this.members.values()) {
-        if (member.sockets.size === 0) this.scheduleLobbyRemoval(member.id)
-      }
+      this.scheduleRemovalOfAbsent()
+    }
+  }
+
+  /** 対戦が終わったら、いない人を猶予のあとで退室扱いにする(ラウンド制の途中は席を残す) */
+  private scheduleRemovalOfAbsent(): void {
+    if (this.locked) return
+    for (const member of this.members.values()) {
+      if (member.sockets.size === 0) this.scheduleLobbyRemoval(member.id)
     }
   }
 
@@ -456,6 +540,7 @@ export class Room {
       hostId: this.hostId,
       settings: { ...this.settings },
       matchId: this.matchId,
+      series: this.series ? { ...structuredClone(this.series), standings: standings(this.series) } : null,
       members: [...this.members.values()].map((m) => ({
         id: m.id,
         name: m.name,
@@ -485,7 +570,7 @@ export class Room {
   private removeMember(id: string): void {
     this.cancelLobbyRemoval(id)
     this.members.delete(id)
-    if (this.phase !== 'playing') this.seated.delete(id)
+    if (!this.locked) this.seated.delete(id)
     if (this.hostId === id) {
       const next = [...this.members.values()].find((m) => m.sockets.size > 0) ?? this.members.values().next().value
       this.hostId = next?.id ?? null
@@ -500,7 +585,7 @@ export class Room {
       this.lobbyRemovals.delete(id)
       const member = this.members.get(id)
       if (!member || member.sockets.size > 0) return
-      if (this.phase === 'playing' && this.seated.has(id)) return
+      if (this.locked && this.seated.has(id)) return
       this.removeMember(id)
     }, this.timing.lobbyGraceMs)
     this.lobbyRemovals.set(id, handle)

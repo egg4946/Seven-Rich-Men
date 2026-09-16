@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { decisionKey, seededRng, whoMustAct, type Action } from '@srm/game-core'
-import type { GameUpdate, RoomView } from '@srm/protocol'
+import type { GameUpdate, RoomSettings, RoomView } from '@srm/protocol'
 import { Room, type RoomTiming } from './room.js'
 
 const TIMING: RoomTiming = { timerBaseMs: 1000, timerReserveMs: 2000, cpuDelayScale: 0.1, lobbyGraceMs: 5000 }
@@ -30,12 +30,20 @@ function mustJoin(room: Room, socketId: string, name: string, token: string): st
   return result.data.you
 }
 
+const SETTINGS: RoomSettings = {
+  seats: 4,
+  cpuLevel: 'normal',
+  rounds: 1,
+  seating: 'fixed',
+  fourPlayerExchange: 'double',
+}
+
 /** 2人が入って、4人戦(CPU2人)を始める */
-function startTwo(firstSeed = 1) {
+function startTwo(firstSeed = 1, settings: Partial<RoomSettings> = {}) {
   const s = setup(firstSeed)
   const a = mustJoin(s.room, 'sa', 'A', TOKEN_A)
   const b = mustJoin(s.room, 'sb', 'B', TOKEN_B)
-  expect(s.room.updateSettings(a, { seats: 4, cpuLevel: 'normal' }).ok).toBe(true)
+  expect(s.room.updateSettings(a, { ...SETTINGS, ...settings }).ok).toBe(true)
   expect(s.room.start(a).ok).toBe(true)
   const matchId = s.rooms.get('sa')?.matchId ?? ''
   return { ...s, a, b, matchId }
@@ -247,5 +255,101 @@ describe('制限時間と自動操作', () => {
     vi.advanceTimersByTime(300)
     const state = room.state!
     expect(decisionKey(state) === key && whoMustAct(state).includes(b)).toBe(false)
+  })
+})
+
+describe('ラウンド制', () => {
+  it('ラウンドが終わると結果を記録し、部屋主が次のラウンドを始めると身分に応じた交換から始まる', () => {
+    const { room, rooms, games, a, b, matchId } = startTwo(1, { rounds: 3 })
+    expect(rooms.get('sa')?.series).toMatchObject({ round: 1, completed: 0, finished: false })
+
+    advanceUntil(() => rooms.get('sa')?.phase === 'result', 500)
+    const afterFirst = rooms.get('sa')!.series!
+    expect(afterFirst).toMatchObject({ round: 1, completed: 1, finished: false })
+    expect(Object.values(afterFirst.scores).sort()).toEqual([0, 1, 2, 3])
+    expect(afterFirst.standings).toEqual(afterFirst.lastRanking)
+
+    // ラウンドの合間は、新しい人は入れず、設定も変えられない
+    expect(room.join('sc', 'C', 'token-cccccccccccc')).toMatchObject({ ok: false, code: 'in_progress' })
+    expect(room.updateSettings(a, SETTINGS)).toMatchObject({ ok: false, code: 'in_progress' })
+    expect(room.next(b)).toMatchObject({ ok: false, code: 'forbidden' })
+    expect(room.end(a).ok).toBe(false) // エンドレスではない
+
+    expect(room.next(a).ok).toBe(true)
+    const second = rooms.get('sa')!
+    expect(second.series).toMatchObject({ round: 2, completed: 1 })
+    expect(second.matchId).not.toBe(matchId)
+    expect(room.state?.pending?.type).toBe('exchange')
+    expect(games.get('sa')?.view.titles).not.toBeNull()
+    // 席は固定なので同じ並び
+    expect(room.state?.players.map((p) => p.id)).toEqual(games.get('sb')?.view.seatOrder)
+
+    advanceUntil(() => rooms.get('sa')?.series?.completed === 2, 500)
+    expect(room.next(a).ok).toBe(true)
+    advanceUntil(() => rooms.get('sa')?.series?.completed === 3, 500)
+    const final = rooms.get('sa')!.series!
+    expect(final.finished).toBe(true)
+    expect(Object.values(final.scores).reduce((x, y) => x + y, 0)).toBe(18)
+    expect(room.next(a).ok).toBe(false)
+
+    // 終わったら新しい人も入れて、また始められる
+    expect(room.join('sc', 'C', 'token-cccccccccccc').ok).toBe(true)
+    expect(room.start(a).ok).toBe(true)
+    expect(rooms.get('sa')?.series).toMatchObject({ round: 1, completed: 0 })
+  })
+
+  it('カード交換は同時に答える受付で、他の人の回答で更新番号が進んでも同じ受付への回答を受け付ける', () => {
+    let started: ReturnType<typeof startTwo> | null = null
+    for (let seed = 1; seed < 200 && !started; seed++) {
+      const s = startTwo(seed, { rounds: 3 })
+      advanceUntil(() => s.rooms.get('sa')?.phase === 'result', 500)
+      expect(s.room.next(s.a).ok).toBe(true)
+      const state = s.room.state!
+      if (state.pending?.type === 'exchange' && [s.a, s.b].every((id) => whoMustAct(state).includes(id))) started = s
+      else s.room.dispose()
+    }
+    expect(started).not.toBeNull()
+    const { room, rooms, games, a, b } = started!
+    const matchId = rooms.get('sa')!.matchId!
+    const fromA = games.get('sa')!
+    const fromB = games.get('sb')!
+    expect(fromA.view.version).toBe(fromB.view.version)
+
+    const exchangeFrom = (update: GameUpdate): Action => {
+      const { view } = update
+      if (view.pending?.type !== 'exchange' || !view.pending.yours) throw new Error('カード交換の場面ではありません')
+      const { fixed, choices, pick } = view.pending.yours
+      return { type: 'EXCHANGE', playerId: view.you.id, cards: [...fixed, ...choices.slice(0, pick)] }
+    }
+
+    // 後の席の人の回答が先に届いても、同じ画面から答えた人の回答は拒否されない
+    expect(room.act(b, matchId, fromB.view.version, exchangeFrom(fromB)).ok).toBe(true)
+    expect(room.act(a, matchId, fromA.view.version, exchangeFrom(fromA)).ok).toBe(true)
+    // 同じ回答の二重送信は拒否される
+    expect(room.act(a, matchId, fromA.view.version, exchangeFrom(fromA))).toMatchObject({ ok: false, code: 'stale' })
+  })
+
+  it('エンドレスは部屋主が終了するまで続く', () => {
+    const { room, rooms, a } = startTwo(2, { rounds: 'endless' })
+    for (let round = 1; round <= 2; round++) {
+      advanceUntil(() => rooms.get('sa')?.series?.completed === round, 500)
+      expect(rooms.get('sa')?.series?.finished).toBe(false)
+      if (round < 2) expect(room.next(a).ok).toBe(true)
+    }
+    expect(room.end(a).ok).toBe(true)
+    expect(rooms.get('sa')?.series?.finished).toBe(true)
+    expect(room.next(a).ok).toBe(false)
+  })
+
+  it('ラウンドの合間に切断した人は席が残り、部屋主がいなければ他の人が次へ進められる', () => {
+    const { room, rooms, a, b } = startTwo(3, { rounds: 3 })
+    advanceUntil(() => rooms.get('sb')?.phase === 'result', 500)
+    room.disconnect('sa')
+    vi.advanceTimersByTime(TIMING.lobbyGraceMs + 10)
+    expect(rooms.get('sb')?.members.map((m) => m.id)).toContain(a)
+
+    expect(room.next(b).ok).toBe(true)
+    // 戻ってきた部屋主は同じ席に戻れる
+    expect(room.join('sa2', 'A', TOKEN_A)).toMatchObject({ ok: true, data: { you: a } })
   })
 })
