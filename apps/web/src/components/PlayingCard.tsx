@@ -1,5 +1,5 @@
 import { animate, motion, useMotionValue, type PanInfo, type Transition } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { parseCard, type CardId } from '@srm/game-core'
 import { cx } from '../ui/cx'
 import { RANK_EFFECT_SHORT, SUIT_SYMBOL, cardName, isRedSuit, rankLabel } from '../ui/labels'
@@ -26,6 +26,8 @@ export interface BoardEnter {
   delay: number
   /** 波紋を出すか(最初の表示では出さない) */
   ring: boolean
+  /** 手札から飛んできて着いたところ。落ちてくる代わりに、軽くつぶれて弾む */
+  landing?: boolean
 }
 
 function enterTransition(delay: number): Transition {
@@ -39,7 +41,8 @@ function colorOf(id: CardId): string {
 }
 
 /**
- * 手札のカード。場の同じカードと layoutId を共有し、出したときに場へ移動して見える。
+ * 手札のカード。layoutId で手札の中の並び替えを滑らかにする(場へは飛ぶ層 CardFlightLayer が運ぶ)。
+ * data-card は飛び立つ位置を測るのに使う。
  * onPlay があれば、ダブルクリック(ダブルタップ)か上へのスワイプで出せる。
  * enter はマウント時だけ使う(手番が変わって button ⇔ div が入れ替わっても、登場し直さない)。
  */
@@ -147,7 +150,14 @@ export function HandCard({
 
   if (!onClick) {
     return (
-      <motion.div layoutId={`card-${id}`} {...appear} role="img" aria-label={label} className={className}>
+      <motion.div
+        layoutId={`card-${id}`}
+        {...appear}
+        data-card={id}
+        role="img"
+        aria-label={label}
+        className={className}
+      >
         {face}
       </motion.div>
     )
@@ -158,6 +168,7 @@ export function HandCard({
       type="button"
       layoutId={`card-${id}`}
       {...appear}
+      data-card={id}
       style={{ y }}
       drag={onPlay ? 'y' : false}
       dragConstraints={{ top: -160, bottom: 0 }}
@@ -200,27 +211,15 @@ export function BoardCard({
   const [ring, setRing] = useState(!!enter?.ring)
   const delay = enter?.delay ?? 0
   const effect = !joker && !forced && !!cell && RANK_EFFECT_SHORT[cell.rank] !== undefined
+  const initial = !enter ? false : enter.landing ? { scaleX: 1.14, scaleY: 0.8 } : { opacity: 0, scale: 1.7 }
   return (
     <motion.div
-      layoutId={joker ? undefined : `card-${id}`}
-      initial={enter ? { opacity: 0, scale: 1.7 } : false}
-      animate={{ opacity: 1, scale: 1 }}
+      initial={initial}
+      animate={{ opacity: 1, scale: 1, scaleX: 1, scaleY: 1 }}
       transition={enterTransition(delay)}
-      className={cx(
-        'relative flex h-full w-full flex-col items-center justify-center rounded-md border leading-none',
-        joker
-          ? 'border-primary-300 bg-primary-50 text-primary-700'
-          : forced
-            ? cx('border-slate-300 bg-slate-50', colorOf(id))
-            : cx('border-slate-200 bg-white shadow-sm', colorOf(id)),
-      )}
+      className={cx(boardFaceClass(id, forced, joker), 'relative')}
     >
-      <span className="text-xs font-semibold md:text-sm">{joker ? 'JK' : cell ? rankLabel(cell.rank) : ''}</span>
-      {!joker && cell && (
-        <span aria-hidden="true" className="mt-0.5 hidden text-xs md:block">
-          {SUIT_SYMBOL[cell.suit]}
-        </span>
-      )}
+      <BoardFace id={id} joker={joker} />
       {ring && (
         <span
           aria-hidden="true"
@@ -231,6 +230,37 @@ export function BoardCard({
       )}
     </motion.div>
   )
+}
+
+/** 場のカードの枠と色。飛んでくるカードも同じ見た目にする */
+export function boardFaceClass(id: CardId, forced: boolean, joker?: boolean): string {
+  return cx(
+    'flex h-full w-full flex-col items-center justify-center rounded-md border leading-none',
+    joker
+      ? 'border-primary-300 bg-primary-50 text-primary-700'
+      : forced
+        ? cx('border-slate-300 bg-slate-50', colorOf(id))
+        : cx('border-slate-200 bg-white shadow-sm', colorOf(id)),
+  )
+}
+
+export function BoardFace({ id, joker }: { id: CardId; joker?: boolean }) {
+  const cell = joker ? null : parseCard(id)
+  return (
+    <>
+      <span className="text-xs font-semibold md:text-sm">{cell ? rankLabel(cell.rank) : 'JK'}</span>
+      {cell && (
+        <span aria-hidden="true" className="mt-0.5 hidden text-xs md:block">
+          {SUIT_SYMBOL[cell.suit]}
+        </span>
+      )}
+    </>
+  )
+}
+
+/** カードの裏面。相手の席の手札と、飛び立つときの相手のカードに使う */
+export function CardBack({ className, style }: { className?: string; style?: CSSProperties }) {
+  return <span aria-hidden="true" className={cx('card-back block rounded-[3px]', className)} style={style} />
 }
 
 /** 相手の公開中のカード */

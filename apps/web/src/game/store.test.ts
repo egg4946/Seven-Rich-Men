@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGame, seededRng, viewFor, type PlayerView } from '@srm/game-core'
 import type { RoomView } from '@srm/protocol'
 import type { OnlineHandlers } from '../online/client'
-import { useGameStore } from './store'
+import { loadCpuSpeed, useGameStore } from './store'
 
 const online = vi.hoisted(() => ({
   handlers: null as OnlineHandlers | null,
@@ -62,6 +62,37 @@ beforeEach(() => {
 afterEach(async () => {
   await useGameStore.getState().leaveRoom()
   vi.useRealTimers()
+})
+
+describe('CPUの速さ', () => {
+  function stubStorage(saved: string | null) {
+    const items = new Map<string, string>(saved === null ? [] : [['srm:cpuSpeed', saved]])
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => items.get(k) ?? null,
+      setItem: (k: string, v: string) => void items.set(k, v),
+    })
+    return items
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('保存した速さを読み込み、なければ・おかしな値なら ふつう', () => {
+    stubStorage('slow')
+    expect(loadCpuSpeed()).toBe('slow')
+    stubStorage(null)
+    expect(loadCpuSpeed()).toBe('normal')
+    stubStorage('turbo')
+    expect(loadCpuSpeed()).toBe('normal')
+  })
+
+  it('切り替えた速さを保存する', () => {
+    const items = stubStorage(null)
+    useGameStore.getState().setCpuSpeed('fast')
+    expect(useGameStore.getState().cpuSpeed).toBe('fast')
+    expect(items.get('srm:cpuSpeed')).toBe('fast')
+  })
 })
 
 describe('入室', () => {

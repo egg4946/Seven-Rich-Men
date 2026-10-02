@@ -1,9 +1,13 @@
+import type { CSSProperties } from 'react'
 import type { OpponentView, Title } from '@srm/game-core'
 import { useFx } from '../fx/store'
 import { cx } from '../ui/cx'
 import { STATUS_LABEL, TITLE_LABEL } from '../ui/labels'
 import { Badge, STATUS_TONE, TITLE_TONE } from './Badge'
-import { MiniCard } from './PlayingCard'
+import { CardBack, MiniCard } from './PlayingCard'
+
+/** 席に並べる裏向きの手札の、最大の枚数(実際の枚数は数字で出す) */
+const FAN_MAX = 5
 
 export function OpponentSeat({
   opponent,
@@ -68,8 +72,21 @@ export function OpponentSeat({
             </dd>
           </div>
         )}
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           <dt>手札</dt>
+          {opponent.handCount > 0 && (
+            // 裏向きの手札。カードはここから場へ飛んでいく(data-seat-hand で位置を測る)
+            <span
+              aria-hidden="true"
+              data-seat-hand={opponent.id}
+              className={cx('seat-fan', out && 'opacity-40')}
+              style={{ '--fan-n': Math.min(opponent.handCount, FAN_MAX) } as CSSProperties}
+            >
+              {Array.from({ length: Math.min(opponent.handCount, FAN_MAX) }, (_, i) => (
+                <CardBack key={i} className="seat-fan-card" style={{ '--i': i } as CSSProperties} />
+              ))}
+            </span>
+          )}
           <dd key={opponent.handCount} className="fx-bump font-semibold text-slate-900">
             {opponent.handCount}枚
           </dd>

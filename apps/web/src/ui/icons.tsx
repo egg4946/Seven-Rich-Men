@@ -64,6 +64,16 @@ export function SparkleIcon(props: IconProps) {
   )
 }
 
+/** CPU の速さの切り替え(メーター) */
+export function GaugeIcon(props: IconProps) {
+  return (
+    <svg {...stroke} {...props}>
+      <path d="M3.5 16a9 9 0 1 1 17 0" />
+      <path d="m12 14 4-5" />
+    </svg>
+  )
+}
+
 /** 席と席の間に置く、手番が回る向きの矢印。反時計回りは左向きにする */
 export function TurnArrowIcon({ direction, style, ...props }: IconProps & { direction: 1 | -1 }) {
   return (

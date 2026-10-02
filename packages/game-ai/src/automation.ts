@@ -38,8 +38,14 @@ export function timeoutAction(state: GameState, id: PlayerId): Action | null {
   }
 }
 
+/** CPU の速さ。ソロでは選べて、オンラインは「ふつう」で固定 */
+export type CpuSpeed = 'slow' | 'normal' | 'fast'
+
+/** 待ち時間に掛ける倍率。「速い」がもとの速さ */
+export const CPU_SPEED_SCALE: Record<CpuSpeed, number> = { slow: 2.4, normal: 1.6, fast: 1 }
+
 /** CPU が考えているように見せる待ち時間 */
-export function cpuDelayMs(state: GameState, random: () => number = Math.random): number {
+export function cpuDelayMs(state: GameState, speed: CpuSpeed = 'normal', random: () => number = Math.random): number {
   const type = state.pending?.type
   const [min, max] =
     type === 'fourStop' || type === 'jokerReaction'
@@ -47,5 +53,5 @@ export function cpuDelayMs(state: GameState, random: () => number = Math.random)
       : type === 'giveSevens' || type === 'exchange'
         ? [700, 1500]
         : [700, 1200]
-  return Math.round(min + (max - min) * random())
+  return Math.round((min + (max - min) * random()) * CPU_SPEED_SCALE[speed])
 }

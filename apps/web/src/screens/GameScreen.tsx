@@ -14,14 +14,15 @@ import { ResultDialog } from '../components/ResultDialog'
 import { RulesDialog } from '../components/RulesDialog'
 import { TimerBar } from '../components/TimerBar'
 import { Toasts } from '../components/Toasts'
+import { CardFlightLayer } from '../components/fx/CardFlightLayer'
 import { CutinLayer } from '../components/fx/CutinLayer'
 import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
 import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
-import { RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
-import { TITLE_LABEL, directionLabel, roundProgress } from '../ui/labels'
+import { GaugeIcon, RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
+import { CPU_SPEED_LABEL, NEXT_CPU_SPEED, TITLE_LABEL, directionLabel, roundProgress } from '../ui/labels'
 
 /** 席の並びの両端に置く、自分の位置。両端とも自分で、一周してつながっていることを表す */
 function YouCap({ active }: { active: boolean }) {
@@ -67,6 +68,8 @@ export function GameScreen() {
   const series = useGameStore((s) => s.series)
   const nextRound = useGameStore((s) => s.nextRound)
   const finishSeries = useGameStore((s) => s.finishSeries)
+  const cpuSpeed = useGameStore((s) => s.cpuSpeed)
+  const setCpuSpeed = useGameStore((s) => s.setCpuSpeed)
 
   const [selected, setSelected] = useState<CardId[]>([])
   /** ジョーカーを置く位置として選んだマス(一緒に出すカードを選ぶとき) */
@@ -253,6 +256,19 @@ export function GameScreen() {
             {multiRound && <Badge tone="accent">{roundProgress(series)}</Badge>}
           </div>
           <div className="flex items-center gap-1">
+            {!online && (
+              <Button
+                variant="subtle"
+                size="sm"
+                aria-label={`CPUの速さ: ${CPU_SPEED_LABEL[cpuSpeed]}(押すと${CPU_SPEED_LABEL[NEXT_CPU_SPEED[cpuSpeed]]}に切り替え)`}
+                onClick={() => setCpuSpeed(NEXT_CPU_SPEED[cpuSpeed])}
+                className="px-2 sm:px-3"
+              >
+                <GaugeIcon className="h-4 w-4 text-primary-500" />
+                <span className="hidden sm:inline">速さ:</span>
+                {CPU_SPEED_LABEL[cpuSpeed]}
+              </Button>
+            )}
             <Button
               variant="subtle"
               size="sm"
@@ -418,6 +434,7 @@ export function GameScreen() {
         </div>
       </LayoutGroup>
 
+      <CardFlightLayer />
       <CutinLayer />
       <Toasts />
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />

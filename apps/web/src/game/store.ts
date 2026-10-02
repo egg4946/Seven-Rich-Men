@@ -34,6 +34,7 @@ import {
   decisionKey,
   startSoloSeries,
   timeoutAction,
+  type CpuSpeed,
   type SoloSettings,
 } from './controller'
 
@@ -59,6 +60,8 @@ interface GameStore {
   /** 対戦ごとに増える。画面の状態(選択中のカードなど)をリセットするのに使う */
   gameId: number
   settings: SoloSettings
+  /** ソロの CPU の速さ。演出の量と同じく、対戦中に変えられて次回も覚えておく */
+  cpuSpeed: CpuSpeed
   /** ソロ対戦の状態。オンラインではサーバーだけが持つので null */
   game: GameState | null
   /** 画面が見るのはこれだけ。ソロでもオンラインでも同じ形 */
@@ -92,6 +95,7 @@ interface GameStore {
   showLobby: () => void
   act: (action: Action) => void
   dismissToast: (id: number) => void
+  setCpuSpeed: (speed: CpuSpeed) => void
 }
 
 const SETTINGS_KEY = 'srm:settings'
@@ -129,6 +133,29 @@ function saveSettings(settings: SoloSettings): void {
     // 保存できなくても遊べるので無視する
   }
 }
+
+const SPEED_KEY = 'srm:cpuSpeed'
+
+export function loadCpuSpeed(): CpuSpeed {
+  try {
+    const saved = localStorage.getItem(SPEED_KEY)
+    if (saved === 'slow' || saved === 'normal' || saved === 'fast') return saved
+  } catch {
+    // 読めなければ既定値
+  }
+  return 'normal'
+}
+
+function saveCpuSpeed(speed: CpuSpeed): void {
+  try {
+    localStorage.setItem(SPEED_KEY, speed)
+  } catch {
+    // 保存できなくても遊べる
+  }
+}
+
+/** CPU がカットインやカードの着地を待つときに、もう一度確かめるまでの間隔 */
+const FX_WAIT_MS = 200
 
 /** まだ誰も出していない(始まったばかりの)対戦か。途中から入ったときは開始の演出を出さない */
 function isFreshGame(view: PlayerView): boolean {
@@ -278,16 +305,21 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const tag = `${game.version}|${id}`
       if (scheduled.has(tag)) continue
       scheduled.add(tag)
-      cpuTimers.push(
-        setTimeout(() => {
-          const current = get().game
-          if (!current || decisionKey(current) !== key || !whoMustAct(current).includes(id)) return
-          const action = decideCpu(current, id, get().settings.level)
-          if (action && applySolo(action)) return
-          const fallback = timeoutAction(current, id)
-          if (fallback) applySolo(fallback)
-        }, cpuDelayMs(game)),
-      )
+      const run = () => {
+        const current = get().game
+        if (!current || decisionKey(current) !== key || !whoMustAct(current).includes(id)) return
+        // カットインが出ている間・前のカードが飛んでいる間は待って、演出と次の手を重ねない
+        const fx = useFx.getState()
+        if (fx.current !== null || fx.flights.length > 0) {
+          cpuTimers.push(setTimeout(run, FX_WAIT_MS))
+          return
+        }
+        const action = decideCpu(current, id, get().settings.level)
+        if (action && applySolo(action)) return
+        const fallback = timeoutAction(current, id)
+        if (fallback) applySolo(fallback)
+      }
+      cpuTimers.push(setTimeout(run, cpuDelayMs(game, get().cpuSpeed)))
     }
   }
 
@@ -397,6 +429,7 @@ export const useGameStore = create<GameStore>()((set, get) => {
     mode: 'solo',
     gameId: 0,
     settings: loadSettings(),
+    cpuSpeed: loadCpuSpeed(),
     game: null,
     view: null,
     series: null,
@@ -549,6 +582,11 @@ export const useGameStore = create<GameStore>()((set, get) => {
 
     dismissToast(id) {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
+    },
+
+    setCpuSpeed(speed) {
+      saveCpuSpeed(speed)
+      set({ cpuSpeed: speed })
     },
   }
 })

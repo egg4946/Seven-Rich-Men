@@ -18,7 +18,7 @@ import { CPU_NAMES, type CpuLevel } from '@srm/game-ai'
  */
 
 export { decisionKey } from '@srm/game-core'
-export { cpuActors, cpuDelayMs, decideCpu, timeoutAction } from '@srm/game-ai'
+export { cpuActors, cpuDelayMs, decideCpu, timeoutAction, type CpuSpeed } from '@srm/game-ai'
 
 export const HUMAN_ID = 'you'
 
