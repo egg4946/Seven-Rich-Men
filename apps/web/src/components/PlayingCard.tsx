@@ -15,6 +15,12 @@ const SWIPE_DISTANCE = 48
 const SWIPE_VELOCITY = 500
 /** 選択中のカードを持ち上げる量 */
 const LIFT = -8
+/** 選んだときの、つぶれて伸びて戻る弾み(yui540 のゼリー) */
+const JELLY_X = [1, 1.14, 0.92, 1.03, 1]
+const JELLY_Y = [1, 0.84, 1.1, 0.98, 1]
+const JELLY = { duration: 0.42, ease: 'easeInOut' } as const
+/** 効果のあるカードが着地したときに飛ばす、放射状の線の向き */
+const BURST_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]
 
 /** 手札に新しく来たカードの登場 */
 export interface CardEnter {
@@ -87,6 +93,18 @@ export function HandCard({
     const controls = animate(y, rest, MOVE)
     return () => controls.stop()
   }, [y, rest])
+
+  // 選んだ瞬間だけ、ぷるんと弾ませる(最初の表示や選択を外したときは動かさない)
+  const scaleX = useMotionValue(1)
+  const scaleY = useMotionValue(1)
+  const wasSelected = useRef(selected)
+  useEffect(() => {
+    const picked = selected && !wasSelected.current
+    wasSelected.current = selected
+    if (!picked) return
+    const controls = [animate(scaleX, JELLY_X, JELLY), animate(scaleY, JELLY_Y, JELLY)]
+    return () => controls.forEach((c) => c.stop())
+  }, [selected, scaleX, scaleY])
 
   const lastTap = useRef(0)
   const dragged = useRef(false)
@@ -169,12 +187,14 @@ export function HandCard({
       layoutId={`card-${id}`}
       {...appear}
       data-card={id}
-      style={{ y }}
+      style={{ y, scaleX, scaleY }}
       drag={onPlay ? 'y' : false}
       dragConstraints={{ top: -160, bottom: 0 }}
       dragElastic={0.1}
       dragMomentum={false}
       whileDrag={{ scale: 1.06, zIndex: 10 }}
+      // マウスを乗せると、手に取るように少し傾ける(タッチでは出ない)
+      whileHover={{ rotate: -3 }}
       onPointerDown={() => {
         dragged.current = false
       }}
@@ -217,7 +237,8 @@ export function BoardCard({
       initial={initial}
       animate={{ opacity: 1, scale: 1, scaleX: 1, scaleY: 1 }}
       transition={enterTransition(delay)}
-      className={cx(boardFaceClass(id, forced, joker), 'relative')}
+      // 波紋と放射線が、隣のマスのカードの下に隠れないよう手前に出す
+      className={cx(boardFaceClass(id, forced, joker), 'relative', ring && 'z-[1]')}
     >
       <BoardFace id={id} joker={joker} />
       {ring && (
@@ -227,6 +248,17 @@ export function BoardCard({
           style={{ animationDelay: `${Math.round(delay * 1000) + 120}ms` }}
           onAnimationEnd={() => setRing(false)}
         />
+      )}
+      {ring && effect && (
+        <span
+          aria-hidden="true"
+          className="fx-burst"
+          style={{ '--delay': `${Math.round(delay * 1000) + 80}ms` } as CSSProperties}
+        >
+          {BURST_ANGLES.map((a) => (
+            <i key={a} style={{ '--a': `${a}deg` } as CSSProperties} />
+          ))}
+        </span>
       )}
     </motion.div>
   )

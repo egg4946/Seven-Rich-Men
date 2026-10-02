@@ -3,6 +3,7 @@ import type { OpponentView, Title } from '@srm/game-core'
 import { useFx } from '../fx/store'
 import { cx } from '../ui/cx'
 import { STATUS_LABEL, TITLE_LABEL } from '../ui/labels'
+import { useChangeCount } from '../ui/useChangeCount'
 import { Badge, STATUS_TONE, TITLE_TONE } from './Badge'
 import { CardBack, MiniCard } from './PlayingCard'
 
@@ -31,11 +32,15 @@ export function OpponentSeat({
   const out = opponent.status !== 'playing'
   // パス・出したカードなど、この人が今したことを一瞬だけ席の上に出す(内容はログと通知にもある)
   const pop = useFx((s) => s.seatPops[opponent.id])
+  // パスが減ったら、残りの数を揺らして目を引く
+  const passChanges = useChangeCount(opponent.passesLeft)
   return (
     <article
       aria-label={`${opponent.name}${isTurn ? '(手番)' : isNext ? '(次の手番)' : ''}`}
       className={cx(
         'relative min-w-36 flex-1 rounded-xl border px-3 py-1.5 leading-normal shadow-sm transition-colors md:min-w-40 md:py-2',
+        // 手番が回ってきたら、席が小さく跳ねる
+        isTurn && 'fx-hop',
         isTurn ? 'border-primary-500 ring-2 ring-primary-500/30' : 'border-slate-200',
         out ? 'bg-gray-50' : 'bg-white',
       )}
@@ -96,7 +101,16 @@ export function OpponentSeat({
           <dt>
             パス<span className="max-sm:hidden">残り</span>
           </dt>
-          <dd className="font-semibold text-slate-900">{opponent.passesLeft}</dd>
+          <dd
+            key={passChanges}
+            className={cx(
+              'font-semibold',
+              passChanges > 0 && 'fx-wobble',
+              opponent.passesLeft === 0 ? 'text-red-700' : 'text-slate-900',
+            )}
+          >
+            {opponent.passesLeft}
+          </dd>
         </div>
         {sevens && (
           // 7渡しの間だけ、この人が7を何枚出して何枚渡すのかを出しておく

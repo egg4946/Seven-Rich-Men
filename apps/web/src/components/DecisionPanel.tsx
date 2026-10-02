@@ -23,6 +23,7 @@ import { cx } from '../ui/cx'
 import { AlertIcon } from '../ui/icons'
 import { RANKS, TITLE_LABEL, cardName, rankLabel, type NameOf } from '../ui/labels'
 import { Button } from './Button'
+import { LoadingDots } from './fx/BouncyText'
 
 /** ボタン以外の出し方の案内 */
 const QUICK_HINT = 'ダブルクリックか上へスワイプでも出せます。'
@@ -46,7 +47,7 @@ function Panel({
   return (
     <section
       aria-label={title}
-      className="rounded-xl border border-slate-200 bg-white px-3 py-2 leading-normal md:px-4 md:py-3"
+      className="fx-panel-in rounded-xl border border-slate-200 bg-white px-3 py-2 leading-normal md:px-4 md:py-3"
     >
       <h2 className={cx('text-sm font-semibold text-slate-900', sameAsStatus && 'max-md:sr-only')}>{title}</h2>
       {/* スマホでは説明を小さくして、操作パネルが場を覆わないようにする */}
@@ -73,6 +74,7 @@ function Waiting({ text }: { text: string }) {
       className="rounded-xl border border-slate-200 bg-gray-50 px-3 py-2 text-sm leading-normal text-body md:px-4 md:py-3"
     >
       {text}
+      <LoadingDots />
     </p>
   )
 }

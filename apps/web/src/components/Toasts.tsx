@@ -18,8 +18,11 @@ function ToneIcon({ tone }: { tone: ToastTone }) {
   return <AlertIcon className={cx(base, tone === 'error' ? 'text-red-600' : 'text-amber-600')} />
 }
 
+/** 上から落ちてきて、少し行き過ぎて止まる */
+const DROP = { type: 'spring', stiffness: 520, damping: 22, mass: 0.8 } as const
+
 /**
- * 通知。出現だけフェードし、消えるときはすぐ DOM から外す。
+ * 通知。出現だけ動かし(上から落ちてきて弾む)、消えるときはすぐ DOM から外す。
  * (消えるアニメーションは、タブが裏にあると完了せず通知が溜まって画面を覆うため使わない)
  */
 export function Toasts() {
@@ -34,9 +37,9 @@ export function Toasts() {
       {toasts.map((toast, index) => (
         <motion.div
           key={toast.id}
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
+          initial={{ opacity: 0, y: -24, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ default: DROP, opacity: { duration: 0.15 } }}
           role={toast.tone === 'error' ? 'alert' : 'status'}
           aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
           className={cx(
@@ -46,7 +49,10 @@ export function Toasts() {
             index < toasts.length - 1 && toast.tone !== 'error' && 'hidden md:flex',
           )}
         >
-          <ToneIcon tone={toast.tone} />
+          {/* アイコンは少し遅れてぷるんと出す */}
+          <span className="fx-pop-in shrink-0" style={{ animationDelay: '120ms' }}>
+            <ToneIcon tone={toast.tone} />
+          </span>
           <p className="flex-1 text-sm font-medium">{toast.message}</p>
           <button
             type="button"

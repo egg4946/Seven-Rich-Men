@@ -43,6 +43,8 @@ export function Button({
         'focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANT[variant],
+        // 塗りのボタンは、hover で光が走る
+        (variant === 'primary' || variant === 'danger') && 'fx-shine',
         SIZE[size],
         className,
       )}

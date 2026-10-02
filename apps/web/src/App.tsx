@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { ScreenWipe } from './components/fx/ScreenWipe'
 import { useGameStore } from './game/store'
 import { GameScreen } from './screens/GameScreen'
 import { LobbyScreen } from './screens/LobbyScreen'
@@ -14,7 +15,11 @@ export function App() {
     resumeSession()
   }, [resumeSession])
 
-  if (screen === 'lobby') return <LobbyScreen />
-  if (screen === 'game') return <GameScreen key={gameId} />
-  return <TitleScreen />
+  return (
+    <>
+      {screen === 'lobby' ? <LobbyScreen /> : screen === 'game' ? <GameScreen key={gameId} /> : <TitleScreen />}
+      {/* 画面・対戦(ラウンド)が変わるたびに幕を抜いて見せる */}
+      <ScreenWipe key={`${screen}-${screen === 'game' ? gameId : 0}`} />
+    </>
+  )
 }

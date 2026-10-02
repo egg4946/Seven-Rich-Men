@@ -36,7 +36,11 @@ export function ChoiceChip({
         className="sr-only"
       />
       <span className="flex items-center gap-1 text-sm font-semibold">
-        {checked && <CheckIcon className="h-4 w-4" />}
+        {checked && (
+          <span className="fx-pop-in">
+            <CheckIcon className="h-4 w-4" />
+          </span>
+        )}
         {label}
       </span>
       {description && <span className="text-xs text-slate-500">{description}</span>}
