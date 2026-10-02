@@ -14,6 +14,8 @@ const FOCUSABLE =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 const FADE = { duration: 0.2, ease: [0, 0, 0.2, 1] } as const
+/** パネルは下から出て、軽く弾んで止まる */
+const POP = { type: 'spring', stiffness: 480, damping: 30, mass: 0.8 } as const
 
 /**
  * melta UI Modal。閉じるボタン・Esc・オーバーレイの3経路で閉じられ、フォーカスをトラップし、
@@ -96,9 +98,9 @@ export function Dialog({
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={FADE}
+          initial={{ opacity: 0, y: 24, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ default: POP, opacity: FADE }}
           className={cx(
             'pointer-events-auto flex max-h-[90dvh] w-full flex-col rounded-t-xl bg-white leading-normal shadow-xl md:rounded-xl',
             SIZE[size],

@@ -3,7 +3,21 @@ import { MINOR_KINDS } from '../../fx/events'
 import { particleCount, useFx } from '../../fx/store'
 import { cx } from '../../ui/cx'
 import { RotateIcon } from '../../ui/icons'
+import { BouncyText } from './BouncyText'
+import { Kira, type KiraSpot } from './Kira'
 import { Particles } from './Particles'
+
+/** きらっと光らせるカットイン(上がり・終了・ジョーカー) */
+const KIRA_KINDS = new Set(['finish', 'gameEnd', 'joker'])
+/** 帯の上下の縁に散らすキラ(画面に対する %) */
+const BAND_KIRA: KiraSpot[] = [
+  { x: 18, y: 40, size: 22, delay: 0 },
+  { x: 82, y: 58, size: 26, delay: 140 },
+  { x: 30, y: 62, size: 14, delay: 260 },
+  { x: 70, y: 38, size: 16, delay: 360 },
+  { x: 92, y: 44, size: 12, delay: 460 },
+  { x: 8, y: 56, size: 12, delay: 520 },
+]
 
 /**
  * 効果発動のカットイン。1つずつ順番に出す(待ち行列は fx/store)。
@@ -34,6 +48,8 @@ export function CutinLayer() {
               <span className="fx-shock fx-shock-late" />
             </>
           )}
+          {/* 淡い帯が先に開いて後から閉じ、帯に厚みを出す(2層のワイプ) */}
+          <div className="fx-band-under" />
           <div className="fx-band">
             <span className="fx-band-shine" />
           </div>
@@ -41,9 +57,16 @@ export function CutinLayer() {
           {cutin.kind === 'reverse' && <RotateIcon direction={1} className="fx-spin" />}
           <div className="fx-text">
             {cutin.by && <p className="fx-by">{cutin.by} の</p>}
-            <p className="fx-title">{cutin.title}</p>
+            <p className="fx-title">
+              <BouncyText text={cutin.title} className="fx-char" />
+            </p>
             {cutin.sub && <p className="fx-sub">{cutin.sub}</p>}
           </div>
+          {full && KIRA_KINDS.has(cutin.kind) && (
+            <Kira
+              spots={BAND_KIRA}
+              color={cutin.tone === 'gold' ? '#fde68a' : '#ffffff'} delay={Math.round(cutin.durationMs * 0.2)} />
+          )}
           {cutin.kind === 'joker' && <Particles variant="spark" count={particleCount(16, level)} />}
           {(cutin.kind === 'finish' || cutin.kind === 'gameEnd') &&
             (cutin.mine ? (

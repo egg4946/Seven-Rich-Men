@@ -7,7 +7,16 @@ import { cx } from '../ui/cx'
 import { DEFEAT_REASON, STATUS_LABEL, TITLE_LABEL } from '../ui/labels'
 import { Badge, STATUS_TONE, TITLE_TONE } from './Badge'
 import { Dialog } from './Dialog'
+import { Kira, type KiraSpot } from './fx/Kira'
 import { Particles } from './fx/Particles'
+
+/** 1位の数字の角に散らす、小さなキラ(数字を隠さない) */
+const WINNER_KIRA: KiraSpot[] = [
+  { x: -6, y: 8, size: 11, delay: 0 },
+  { x: 100, y: 14, size: 9, delay: 120 },
+  { x: 92, y: 96, size: 8, delay: 240 },
+  { x: 4, y: 100, size: 7, delay: 320 },
+]
 
 export function ResultDialog({
   open,
@@ -75,10 +84,15 @@ export function ResultDialog({
                   isYou ? 'border-primary-200 bg-primary-50' : 'border-slate-200',
                 )}
               >
-                <span
-                  className={cx('w-10 shrink-0 text-base font-bold', index === 0 ? 'fx-gold-text' : 'text-slate-900')}
-                >
-                  {index + 1}位
+                <span className="relative w-10 shrink-0 text-base font-bold">
+                  {/* 順位の数字は、行が出たあとに上から落ちてきて弾む。1位はきらっと光る */}
+                  <span
+                    className={cx('fx-drop', index === 0 ? 'fx-gold-text' : 'text-slate-900')}
+                    style={{ animationDelay: `${320 + index * 90}ms` }}
+                  >
+                    {index + 1}位
+                  </span>
+                  {index === 0 && <Kira spots={WINNER_KIRA} delay={760} />}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-slate-900">{displayName(id)}</span>

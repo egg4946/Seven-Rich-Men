@@ -3,6 +3,8 @@ import type { CpuLevel } from '@srm/game-ai'
 import type { SeriesRules } from '@srm/game-core'
 import { LIMITS } from '@srm/protocol'
 import { Button } from '../components/Button'
+import { BouncyText, LoadingDots } from '../components/fx/BouncyText'
+import { Kira } from '../components/fx/Kira'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
 import { SeriesSettings } from '../components/SeriesSettings'
@@ -113,14 +115,21 @@ export function TitleScreen() {
               <span />
             </span>
           ))}
+          {/* 扇が開き切ったところで、きらっと光る */}
+          <Kira delay={800} />
         </div>
         <p className="text-sm font-medium text-primary-600">七並べ × 大富豪</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900 md:text-3xl">Seven Rich Men</h1>
+        <h1 className="mt-1 text-2xl font-bold text-slate-900 md:text-3xl">
+          <BouncyText text="Seven Rich Men" />
+        </h1>
         <p className="mt-3 text-base text-body">
           7から並べて、手札を先になくした人の勝ち。8切り・Qボンバー・ジョーカーなど、数字ごとの効果で場が大きく動きます。
         </p>
 
-        <div className="mt-8 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm">
+        <div
+          className="fx-rise mt-8 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
+          style={{ animationDelay: '500ms' }}
+        >
           <label htmlFor="player-name" className="mb-1 block text-sm font-medium text-slate-700">
             あなたの名前
           </label>
@@ -138,7 +147,8 @@ export function TitleScreen() {
 
         <section
           aria-labelledby="online-heading"
-          className="mt-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
+          style={{ animationDelay: '590ms' }}
+          className="fx-rise mt-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
         >
           <h2 id="online-heading" className="text-lg font-semibold text-slate-900">
             友達と遊ぶ
@@ -179,7 +189,8 @@ export function TitleScreen() {
 
         <section
           aria-labelledby="solo-heading"
-          className="mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
+          style={{ animationDelay: '680ms' }}
+          className="fx-rise mt-6 space-y-6 rounded-xl border border-slate-200 bg-white p-6 leading-normal shadow-sm"
         >
           <h2 id="solo-heading" className="text-lg font-semibold text-slate-900">
             ひとりで遊ぶ

@@ -4,6 +4,7 @@ import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { ConnectionBanner } from '../components/ConnectionBanner'
+import { LoadingDots } from '../components/fx/BouncyText'
 import { RulesDialog } from '../components/RulesDialog'
 import { SeriesSettings } from '../components/SeriesSettings'
 import { Toasts } from '../components/Toasts'
@@ -84,12 +85,25 @@ export function LobbyScreen() {
           </h2>
           <ul className="mt-2">
             {room.members.map((member) => (
-              <li key={member.id} className="flex items-center justify-between gap-3 border-b border-slate-200 py-2 last:border-b-0">
+              // 入ってきた人は、下からふわっと出る
+              <li
+                key={member.id}
+                className="fx-rise flex items-center justify-between gap-3 border-b border-slate-200 py-2 last:border-b-0"
+              >
                 <span className="truncate text-sm font-medium text-slate-900">{member.name}</span>
                 <span className="flex shrink-0 gap-1">
                   {member.id === room.you && <Badge tone="accent">あなた</Badge>}
-                  {member.isHost && <Badge>部屋主</Badge>}
-                  {!member.connected && <Badge tone="warning">切断中</Badge>}
+                  {member.isHost && (
+                    // 部屋主が替わったら、ぷるんと付け替える
+                    <span key="host" className="fx-pop-in">
+                      <Badge>部屋主</Badge>
+                    </span>
+                  )}
+                  {!member.connected && (
+                    <span className="fx-pop-in">
+                      <Badge tone="warning">切断中</Badge>
+                    </span>
+                  )}
                 </span>
               </li>
             ))}
@@ -169,6 +183,7 @@ export function LobbyScreen() {
           ) : (
             <p role="status" className="rounded-xl border border-slate-200 bg-gray-50 px-4 py-3 text-center text-sm text-body">
               部屋主が対戦を始めるのを待っています
+              <LoadingDots />
             </p>
           )}
         </div>

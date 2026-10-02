@@ -15,12 +15,14 @@ import { RulesDialog } from '../components/RulesDialog'
 import { TimerBar } from '../components/TimerBar'
 import { Toasts } from '../components/Toasts'
 import { CardFlightLayer } from '../components/fx/CardFlightLayer'
+import { LoadingDots } from '../components/fx/BouncyText'
 import { CutinLayer } from '../components/fx/CutinLayer'
 import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
 import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
 import { cx } from '../ui/cx'
+import { useChangeCount } from '../ui/useChangeCount'
 import { GaugeIcon, RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
 import { CPU_SPEED_LABEL, NEXT_CPU_SPEED, TITLE_LABEL, directionLabel, roundProgress } from '../ui/labels'
 
@@ -31,7 +33,9 @@ function YouCap({ active }: { active: boolean }) {
       <span
         className={cx(
           'rounded-full border px-1 py-2 text-xs font-bold leading-none tracking-widest [writing-mode:vertical-rl]',
-          active ? 'border-primary-500 bg-primary-500 text-white' : 'border-primary-200 bg-primary-50 text-primary-700',
+          active
+            ? 'fx-hop border-primary-500 bg-primary-500 text-white'
+            : 'border-primary-200 bg-primary-50 text-primary-700',
         )}
       >
         あなた
@@ -96,6 +100,8 @@ export function GameScreen() {
   // 演出が流れ終わってから結果を出す(GAME SET のカットインと重ねない)
   const fxIdle = useFx((s) => s.current === null && s.queue.length === 0)
   const boardRef = useRef<HTMLElement>(null)
+  // 自分のパスが減ったら、残りの数を揺らす(フックなので、view が無いときの早期 return より前で呼ぶ)
+  const myPassChanges = useChangeCount(view?.you.passesLeft)
 
   // Qボンバーなどで場を揺らす。Web Animations の transform なので React の再描画は起きない
   useEffect(() => {
@@ -121,7 +127,8 @@ export function GameScreen() {
       <div className="flex min-h-dvh flex-col bg-gray-50 leading-normal">
         <ConnectionBanner />
         <p role="status" className="m-auto text-sm text-body">
-          対戦を準備しています…
+          対戦を準備しています
+          <LoadingDots />
         </p>
       </div>
     )
@@ -253,7 +260,12 @@ export function GameScreen() {
           <div className="flex min-w-0 items-center gap-2">
             <p className="truncate font-semibold text-slate-900">Seven Rich Men</p>
             {online && room && <Badge className="hidden max-w-40 truncate sm:inline-flex">部屋: {room.name}</Badge>}
-            {multiRound && <Badge tone="accent">{roundProgress(series)}</Badge>}
+            {multiRound && (
+              // ラウンドごとに画面を作り直すので、幕が抜けたところでぷるんと出す
+              <span className="fx-pop-in" style={{ animationDelay: '450ms' }}>
+                <Badge tone="accent">{roundProgress(series)}</Badge>
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             {!online && (
@@ -390,7 +402,10 @@ export function GameScreen() {
           <div className="mx-auto max-w-6xl space-y-2 px-4 py-2 md:space-y-3 md:py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
               <p aria-live="polite" className="text-sm font-semibold text-slate-900">
-                {turnText}
+                {/* 手番が変わるたびに、下からふわっと入れ替える(読み上げの領域は残したまま中身だけ出し直す) */}
+                <span key={turnText} className="fx-text-in">
+                  {turnText}
+                </span>
               </p>
               <dl className="flex items-center gap-3 text-xs text-body">
                 {myTitle && (
@@ -405,7 +420,16 @@ export function GameScreen() {
                 )}
                 <div className="flex gap-1">
                   <dt>パス残り</dt>
-                  <dd className="font-semibold text-slate-900">{view.you.passesLeft}</dd>
+                  <dd
+                    key={myPassChanges}
+                    className={cx(
+                      'font-semibold',
+                      myPassChanges > 0 && 'fx-wobble',
+                      view.you.passesLeft === 0 ? 'text-red-700' : 'text-slate-900',
+                    )}
+                  >
+                    {view.you.passesLeft}
+                  </dd>
                 </div>
                 {view.you.skips > 0 && (
                   <div className="flex gap-1">

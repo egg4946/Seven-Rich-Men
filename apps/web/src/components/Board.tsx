@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef, type CSSProperties } from 'react'
 import { SUITS, cardId, cellAt, type Board as BoardState, type Suit } from '@srm/game-core'
 import { useFx } from '../fx/store'
 import { sameCell, type BoardMark } from '../game/selection'
@@ -83,8 +83,11 @@ export function Board({
               const cell = cellAt(board, suit, rank)
               const mark = cell ? undefined : marks.find((m) => sameCell(m.cell, { suit, rank }))
               const pressable = mark && mark.variant !== 'blocked'
+              const markStyle = mark ? ({ '--i': marks.indexOf(mark) } as CSSProperties) : undefined
               const markClass = cx(
                 'flex h-full w-full items-center justify-center rounded-md text-xs font-semibold leading-none',
+                // 印が付いたマスは、少しずつずらしてぷるんと出す
+                mark && 'fx-mark-in',
                 mark ? (mark.danger ? DANGER_STYLE : MARK_STYLE[mark.variant]) : 'border border-dashed border-slate-200',
                 pressable &&
                   'cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
@@ -104,11 +107,19 @@ export function Board({
                       enter={enterOf(suit, rank)}
                     />
                   ) : pressable ? (
-                    <button type="button" aria-label={mark.label} onClick={() => onMark(mark)} className={markClass}>
+                    <button
+                      // 印の種類が変わったら(ジョーカーの位置に選んだ、など)出し直す
+                      key={mark.variant}
+                      type="button"
+                      aria-label={mark.label}
+                      onClick={() => onMark(mark)}
+                      className={markClass}
+                      style={markStyle}
+                    >
                       {mark.variant === 'chosen' ? 'JK' : rankLabel(rank)}
                     </button>
                   ) : (
-                    <span title={mark?.label} className={markClass}>
+                    <span title={mark?.label} className={markClass} style={markStyle}>
                       {mark ? rankLabel(rank) : ''}
                     </span>
                   )}
