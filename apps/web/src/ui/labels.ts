@@ -16,6 +16,7 @@ import {
   type Suit,
   type Title,
 } from '@srm/game-core'
+import type { CpuSpeed } from '@srm/game-ai'
 
 export type ToastTone = 'info' | 'success' | 'alert' | 'error'
 export type NameOf = (id: PlayerId) => string
@@ -97,6 +98,9 @@ export function roundProgress(series: Pick<Series, 'round' | 'rules'>): string {
   const { rounds } = series.rules
   return rounds === 'endless' ? `ラウンド ${series.round}` : `ラウンド ${series.round}/${rounds}`
 }
+
+export const CPU_SPEED_LABEL: Record<CpuSpeed, string> = { slow: '遅い', normal: 'ふつう', fast: '速い' }
+export const NEXT_CPU_SPEED: Record<CpuSpeed, CpuSpeed> = { normal: 'fast', fast: 'slow', slow: 'normal' }
 
 export function directionLabel(direction: Direction): string {
   return direction === 1 ? '時計回り' : '反時計回り'

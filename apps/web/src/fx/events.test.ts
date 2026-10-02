@@ -1,10 +1,39 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cardId, type GameEvent, type PlayerView } from '@srm/game-core'
-import { cutinsFor, seatPopsFor, sevensCutin } from './events'
+import { cutinsFor, flightsFor, seatPopsFor, sevensCutin } from './events'
 import { useFx } from './store'
 
 const YOU = 'you'
 const name = (id: string) => (id === YOU ? 'あなた' : id.toUpperCase())
+
+describe('flightsFor', () => {
+  it('自分で出したカードとジョーカーを飛ばす。相手のカードは裏向きで出る', () => {
+    const flights = flightsFor(
+      [
+        { type: 'PLACED', playerId: 'cpu1', card: cardId('S', 6), forced: false },
+        { type: 'JOKER_USED', playerId: YOU, cell: { suit: 'H', rank: 9 }, withCard: cardId('H', 10) },
+        { type: 'PLACED', playerId: YOU, card: cardId('H', 10), forced: true },
+      ],
+      YOU,
+    )
+    expect(flights).toEqual([
+      { playerId: 'cpu1', card: 'S6', cell: 'S6', faceDown: true, delayMs: 0 },
+      { playerId: YOU, card: 'JOKER', cell: 'H9', faceDown: false, delayMs: 80 },
+      { playerId: YOU, card: 'H10', cell: 'H10', faceDown: false, delayMs: 160 },
+    ])
+  })
+
+  it('強制配置が多いとき(脱落など)と、最初の7の配置は飛ばさない', () => {
+    const many: GameEvent[] = [1, 2, 3, 4, 5].map((rank) => ({
+      type: 'PLACED',
+      playerId: 'cpu1',
+      card: cardId('C', rank),
+      forced: true,
+    }))
+    expect(flightsFor(many, YOU)).toEqual([])
+    expect(flightsFor([{ type: 'SEVENS_PLACED', playerId: 'cpu1', cards: [cardId('S', 7)] }], YOU)).toEqual([])
+  })
+})
 
 describe('cutinsFor', () => {
   it('効果のあるカードの通常配置だけカットインにする', () => {
@@ -79,17 +108,34 @@ describe('useFx の待ち行列', () => {
 
   const placed = (rank: number): GameEvent => ({ type: 'PLACED', playerId: 'cpu1', card: cardId('S', rank), forced: false })
 
+  /** 飛んでいるカードが着くまで進める(カットインは着いてから出る)。進めた時間を返す */
+  const untilLanded = (): number => {
+    const ms = Math.max(0, ...useFx.getState().flights.map((f) => f.delayMs + f.durationMs))
+    vi.advanceTimersByTime(ms)
+    return ms
+  }
+
+  it('カードが飛んでいる間はカットインを出さず、着いてから出す', () => {
+    vi.useFakeTimers()
+    useFx.getState().emit([placed(8)], name, YOU)
+    expect(useFx.getState().flights).toHaveLength(1)
+    expect(useFx.getState().current).toBeNull()
+    untilLanded()
+    expect(useFx.getState().current?.title).toBe('8切り')
+  })
+
   it('1つずつ順番に出し、上限を超えたら古いものから捨てる(上がりは残す)', () => {
     vi.useFakeTimers()
     const fx = useFx.getState()
     fx.emit([{ type: 'FINISHED', playerId: 'cpu2' }], name, YOU)
     fx.emit([placed(5), placed(8), placed(9), placed(10), placed(11)], name, YOU)
+    const flown = untilLanded()
 
     const state = useFx.getState()
     expect(state.current?.kind).toBe('finish')
     expect(state.queue.map((c) => c.title)).toEqual(['9リバ', '10捨て', 'イレブンバック'])
 
-    vi.advanceTimersByTime(state.current?.durationMs ?? 0)
+    vi.advanceTimersByTime((state.current?.durationMs ?? 0) - flown)
     expect(useFx.getState().current?.title).toBe('9リバ')
   })
 
@@ -97,8 +143,10 @@ describe('useFx の待ち行列', () => {
     vi.useFakeTimers()
     const fx = useFx.getState()
     fx.emit([placed(8), { type: 'TURN_STARTED', playerId: YOU }], name, YOU)
+    untilLanded()
     expect(useFx.getState().queue.map((c) => c.kind)).toEqual(['turn'])
     fx.emit([placed(5)], name, YOU)
+    untilLanded()
     expect(useFx.getState().queue.map((c) => c.kind)).toEqual(['skip'])
   })
 })

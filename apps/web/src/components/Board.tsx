@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef } from 'react'
 import { SUITS, cardId, cellAt, type Board as BoardState, type Suit } from '@srm/game-core'
+import { useFx } from '../fx/store'
 import { sameCell, type BoardMark } from '../game/selection'
 import { cx } from '../ui/cx'
 import { RANKS, SUIT_NAME, SUIT_SYMBOL, isRedSuit, rankLabel } from '../ui/labels'
@@ -34,9 +35,20 @@ export function Board({
     previous.current = board
   }, [board])
   const before = previous.current
+
+  // 手札から飛んでいる途中のマスは空けておき、着いたら(飛ぶ層から消えたら)弾ませて置く
+  const flights = useFx((s) => s.flights)
+  const flying = new Set(flights.map((f) => f.cell))
+  const flewBefore = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    flewBefore.current = flying
+  })
+  const justLanded = flewBefore.current
+
   // Qボンバーや脱落で同時に置かれたカードは、少しずつずらして着地させる(最初の表示は配るように速く)
   let landed = 0
   const enterOf = (suit: Suit, rank: number): BoardEnter | null => {
+    if (justLanded.has(cardId(suit, rank))) return { delay: 0, ring: true, landing: true }
     if (before && cellAt(before, suit, rank) !== null) return null
     return { delay: Math.min(landed++ * (before ? 0.07 : 0.035), 0.9), ring: before !== null }
   }
@@ -78,8 +90,13 @@ export function Board({
                   'cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
               )
               return (
-                <div key={rank} aria-hidden={pressable ? undefined : true} className="h-8 sm:h-9 md:h-14">
-                  {cell ? (
+                <div
+                  key={rank}
+                  data-cell={cardId(suit, rank)}
+                  aria-hidden={pressable ? undefined : true}
+                  className="h-8 sm:h-9 md:h-14"
+                >
+                  {cell && flying.has(cardId(suit, rank)) ? null : cell ? (
                     <BoardCard
                       id={cardId(suit, rank)}
                       forced={cell.forced}

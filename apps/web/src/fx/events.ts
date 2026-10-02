@@ -1,6 +1,8 @@
 import {
+  JOKER,
   cardId,
   rankOf,
+  type CardId,
   type GameEvent,
   type PlayerId,
   type PlayerView,
@@ -246,4 +248,39 @@ export function seatPopsFor(events: GameEvent[], youId: PlayerId): SeatPopSpec[]
     }
   }
   return [...pops.values()]
+}
+
+/** 手札から場へ飛ばすカード。cell は置かれるマス(ジョーカーは置いたマス) */
+export interface FlightSpec {
+  playerId: PlayerId
+  card: CardId
+  cell: CardId
+  /** 相手のカードは裏向きで出て、飛びながら表に返る */
+  faceDown: boolean
+  delayMs: number
+}
+
+/** 同じ出来事で続けて出したカードを、少しずつずらして飛ばす間隔 */
+const FLIGHT_STAGGER_MS = 80
+/** 強制配置(Qボンバー・脱落など)がこれより多ければ、飛ばさずに今までどおり置く(一度に飛ぶとうるさい) */
+const FORCED_FLIGHT_MAX = 4
+
+/**
+ * 手札から場に出たカード。自分で出したカード・ジョーカーと、少数の強制配置を飛ばす。
+ * 最初の7の配置は配るのと同じ扱いで飛ばさない。
+ */
+export function flightsFor(events: GameEvent[], youId: PlayerId): FlightSpec[] {
+  const forced = events.filter((e) => e.type === 'PLACED' && e.forced).length
+  const out: FlightSpec[] = []
+  const push = (playerId: PlayerId, card: CardId, cell: CardId) => {
+    out.push({ playerId, card, cell, faceDown: playerId !== youId, delayMs: out.length * FLIGHT_STAGGER_MS })
+  }
+  for (const event of events) {
+    if (event.type === 'PLACED' && (!event.forced || forced <= FORCED_FLIGHT_MAX)) {
+      push(event.playerId, event.card, event.card)
+    } else if (event.type === 'JOKER_USED') {
+      push(event.playerId, JOKER, cardId(event.cell.suit, event.cell.rank))
+    }
+  }
+  return out
 }
