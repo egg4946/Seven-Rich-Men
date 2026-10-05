@@ -243,8 +243,20 @@ export const useGameStore = create<GameStore>()((set, get) => {
     // カードの音は、場に着くところに合わせる
     const fxLevel = useFx.getState().level
     const flyMs = fxLevel === 'off' ? 0 : FLIGHT_MS[fxLevel]
-    for (const cue of soundsFor(events, youId, flyMs)) useSound.getState().play(cue.name, cue.delayMs)
     useFx.getState().emit(events, nameOf, youId)
+    // ドパガキモードでは、着地のたびにコインの音を重ねる(コンボは emit で進んでいる)
+    const dopaCombo = fxLevel === 'dopa' ? useFx.getState().dopa.combo : undefined
+    for (const cue of soundsFor(events, youId, flyMs, dopaCombo)) {
+      useSound.getState().play(cue.name, cue.delayMs, cue.rate)
+    }
+    // カードを出して残り1枚になった人がいたら「リーチ!」
+    if (fxLevel === 'dopa' && view.phase !== 'ended') {
+      const placers = new Set(events.flatMap((e) => (e.type === 'PLACED' && !e.forced ? [e.playerId] : [])))
+      for (const id of placers) {
+        const left = id === youId ? view.you.hand.length : view.opponents.find((o) => o.id === id)?.handCount
+        if (left === 1) useFx.getState().reach(nameOf(id), id === youId)
+      }
+    }
     // 交換が終わると7が置かれて7渡しになるので、ここで7渡しの説明を出す
     if (events.some((e) => e.type === 'CARDS_EXCHANGED') && view.pending?.type === 'giveSevens') {
       useFx.getState().push(sevensCutin(view, nameOf))

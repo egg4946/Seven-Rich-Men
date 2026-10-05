@@ -14,6 +14,12 @@
       "port": 5193
     },
     {
+      "name": "web-5203",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@srm/web", "dev", "--port", "5203", "--strictPort"],
+      "port": 5203
+    },
+    {
       "name": "server",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@srm/server", "dev"],

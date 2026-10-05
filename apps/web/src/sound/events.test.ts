@@ -30,6 +30,17 @@ describe('soundsFor', () => {
     expect(soundsFor([{ type: 'PASSED', playerId: 'cpu1', passesLeft: 2 }], YOU, 600)).toEqual([{ name: 'pass', delayMs: 0 }])
     expect(soundsFor([{ type: 'SEVENS_PLACED', playerId: 'cpu1', cards: [cardId('S', 7)] }], YOU, 600)).toEqual([])
   })
+
+  it('ドパガキモードでは、着地のたびにコインの音を重ね、コンボが伸びるほど高くする', () => {
+    const events: GameEvent[] = [{ type: 'PLACED', playerId: YOU, card: cardId('S', 6), forced: false }]
+    expect(soundsFor(events, YOU, 600, 0)).toEqual([
+      { name: 'cardPut', delayMs: 600 },
+      { name: 'dopaCoin', delayMs: 600, rate: 1 },
+    ])
+    const [, coin] = soundsFor(events, YOU, 600, 5)
+    expect(coin?.rate).toBeGreaterThan(1)
+    expect(soundsFor([{ type: 'PASSED', playerId: 'cpu1', passesLeft: 2 }], YOU, 600, 3)).toEqual([{ name: 'pass', delayMs: 0 }])
+  })
 })
 
 describe('cutinSounds', () => {
@@ -42,5 +53,15 @@ describe('cutinSounds', () => {
     expect(cutinSounds({ kind: 'slash', mine: true })).toEqual([])
     expect(cutinSounds({ kind: 'turn', mine: true })).toEqual([])
     expect(cutinSounds({ kind: 'out', mine: true })).toEqual([])
+  })
+
+  it('ドパガキモードでは、カードの効果・自分の番・脱落にも音を重ねる', () => {
+    expect(cutinSounds({ kind: 'slash', mine: true }, true)).toEqual(['dopaSlash'])
+    expect(cutinSounds({ kind: 'turn', mine: true }, true)).toEqual(['dopaTurn'])
+    expect(cutinSounds({ kind: 'out', mine: false }, true)).toEqual(['dopaOut'])
+    expect(cutinSounds({ kind: 'finish', mine: true }, true)).toEqual(['finish', 'dopaFanfare'])
+    expect(cutinSounds({ kind: 'gameEnd', mine: true }, true)).toEqual(['gameEnd', 'win'])
+    // Qボンバーの爆発は、盤面が弾け飛ぶところで鳴らす(fx/store)
+    expect(cutinSounds({ kind: 'bomb', mine: true }, true)).toEqual([])
   })
 })

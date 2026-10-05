@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import type { GameEvent, PlayerId } from '@srm/game-core'
+import { preloadDopaSounds } from '../sound/player'
 import { useSound } from '../sound/store'
 import type { NameOf } from '../ui/labels'
+import { DOPA_ZERO, PUSH_MAX, dopaFor, multTier, pushRate, type DopaCount, type DopaMilestone } from './dopa'
 import {
   KEEP_KINDS,
   MINOR_KINDS,
@@ -18,11 +20,20 @@ import {
  * - full: すべて(カットイン・閃光・粒・場の揺れ)
  * - lite: 粒・閃光・揺れを出さず、カットインを短くする
  * - off: カットインも吹き出しも出さず、CSS の動きも止める
+ * - dopa: ドパガキモード(ネタ枠)。full に、コンボ・紙吹雪・盤面や手札が弾け飛ぶ演出と音を重ねる。
+ *   ふだんは静かで、コンボが伸びたとき・大きな効果・PUSH の連打で一気に騒がしくなる。
+ *   端末の性能は考慮しない。自分で選んだときだけなる(既定値にはしない)
  */
-export type FxLevel = 'full' | 'lite' | 'off'
+export type FxLevel = 'full' | 'lite' | 'off' | 'dopa'
 
-export const FX_LEVEL_LABEL: Record<FxLevel, string> = { full: '豪華', lite: '控えめ', off: 'オフ' }
-export const NEXT_FX_LEVEL: Record<FxLevel, FxLevel> = { full: 'lite', lite: 'off', off: 'full' }
+export const FX_LEVEL_LABEL: Record<FxLevel, string> = { full: '豪華', lite: '控えめ', off: 'オフ', dopa: 'ドパガキ' }
+/** ふだんの3つの並びは崩さず、オフの次にドパガキを挟む */
+export const NEXT_FX_LEVEL: Record<FxLevel, FxLevel> = { full: 'lite', lite: 'off', off: 'dopa', dopa: 'full' }
+
+/** 閃光・粒・揺れまで出す量か(豪華とドパガキ) */
+export function isRich(level: FxLevel): boolean {
+  return level === 'full' || level === 'dopa'
+}
 
 export interface Cutin extends CutinSpec {
   id: number
@@ -43,7 +54,52 @@ export interface Flight extends FlightSpec {
 }
 
 /** 1枚が飛ぶ時間(抜き出し→弧を描いて移動→着地) */
-export const FLIGHT_MS: Record<Exclude<FxLevel, 'off'>, number> = { full: 600, lite: 400 }
+export const FLIGHT_MS: Record<Exclude<FxLevel, 'off'>, number> = { full: 600, lite: 400, dopa: 600 }
+
+/** ドパガキモードの飾りの状態。seq は同じ内容を続けて出し直すための番号 */
+export interface DopaFx extends DopaCount {
+  /** 今回の倍率と、パワーに足した数。mine は自分のカードで増えたか */
+  mult: { seq: number; value: number; gain: number; mine: boolean } | null
+  /** 暗転。明けたときに上乗せの倍率を見せる */
+  blackout: { seq: number; mult: number } | null
+  praise: { seq: number; text: string; hot: boolean } | null
+  milestone: { seq: number; kind: DopaMilestone } | null
+  /** コンボが切れた(切れる前のコンボ数) */
+  broke: { seq: number; combo: number } | null
+  /** 誰かの手札が残り1枚になった */
+  reach: { seq: number; name: string; mine: boolean } | null
+  /** PUSH を押した回数 */
+  push: number
+  /** 盤面・手札を弾け飛ばす */
+  blast: { seq: number; target: BlastTarget } | null
+}
+
+export type BlastTarget = 'board' | 'hand' | 'both'
+
+const DOPA_IDLE: DopaFx = {
+  ...DOPA_ZERO,
+  mult: null,
+  blackout: null,
+  praise: null,
+  milestone: null,
+  broke: null,
+  reach: null,
+  push: 0,
+  blast: null,
+}
+
+/** 暗転してから明けるまでの時間。真っ暗で音も止め、明けたところで倍率を見せる */
+export const DOPA_BLACKOUT_MS = 1000
+
+/** 弾け飛ぶ前に、暗くして溜める時間(静と動の差を付ける) */
+export const DOPA_BLAST_HUSH_MS = 300
+
+/** ドパガキモードで、自分の上がり・自分が1位の終了の前に暗転して溜める時間 */
+export const DOPA_FREEZE_MS = 400
+
+export function dopaFreezes(spec: Pick<CutinSpec, 'kind' | 'mine'>): boolean {
+  return !!spec.mine && (spec.kind === 'finish' || spec.kind === 'gameEnd')
+}
 
 /**
  * 飛び立つ位置。出来事は画面の描き直しより前に届くので、自分のカードはまだ手札にある。
@@ -79,6 +135,7 @@ const LOW_END: boolean = (() => {
 })()
 
 export function particleCount(base: number, level: FxLevel): number {
+  if (level === 'dopa') return base * 3
   if (level !== 'full') return 0
   return LOW_END ? Math.ceil(base / 2) : base
 }
@@ -90,7 +147,7 @@ export function particleCount(base: number, level: FxLevel): number {
 function loadLevel(): FxLevel {
   try {
     const saved = localStorage.getItem(LEVEL_KEY)
-    if (saved === 'full' || saved === 'lite' || saved === 'off') return saved
+    if (saved === 'full' || saved === 'lite' || saved === 'off' || saved === 'dopa') return saved
   } catch {
     // 読めなければ既定値
   }
@@ -101,13 +158,24 @@ function loadLevel(): FxLevel {
 /** CSS が演出の量を見られるように <html data-fx> に書く(オフでは styles.css が動きを止める) */
 function applyLevel(level: FxLevel): void {
   if (typeof document !== 'undefined') document.documentElement.dataset.fx = level
+  if (level === 'dopa') preloadDopaSounds()
+}
+
+/** ドパガキモードで、落ちてくる飾り・暗転のぶん長く出す種類 */
+const DOPA_LONG: Partial<Record<CutinSpec['kind'], number>> = {
+  bomb: 2000,
+  joker: 2000,
+  finish: 2000,
+  gameEnd: 2000,
 }
 
 function durationOf(spec: CutinSpec, level: FxLevel): number {
-  if (MINOR_KINDS.has(spec.kind)) return level === 'full' ? 900 : 700
+  if (MINOR_KINDS.has(spec.kind)) return isRich(level) ? 900 : 700
   // 7渡しは、なぜカードを渡すのかを読んでもらうので長めに出す
-  if (spec.kind === 'sevens' || spec.kind === 'exchange') return level === 'full' ? 2200 : 1600
-  if (level !== 'full') return 800
+  if (spec.kind === 'sevens' || spec.kind === 'exchange') return isRich(level) ? 2200 : 1600
+  if (!isRich(level)) return 800
+  const long = level === 'dopa' ? DOPA_LONG[spec.kind] : undefined
+  if (long) return long + (dopaFreezes(spec) ? DOPA_FREEZE_MS : 0)
   return spec.kind === 'finish' || spec.kind === 'gameEnd' || spec.kind === 'bomb' ? 1400 : 1100
 }
 
@@ -117,8 +185,14 @@ interface FxStore {
   current: Cutin | null
   queue: Cutin[]
   seatPops: Record<PlayerId, SeatPop>
-  shake: { seq: number; strength: 1 | 2 } | null
+  /** 強さ3はドパガキモードだけ */
+  shake: { seq: number; strength: 1 | 2 | 3 } | null
   flights: Flight[]
+  dopa: DopaFx
+  /** 誰かの手札が残り1枚になった(ドパガキモードだけ「リーチ!」を出す) */
+  reach: (name: string, mine: boolean) => void
+  /** ドパガキモードの PUSH ボタンを押した。押すたびに溜まり、溜まり切ると手札が弾け飛ぶ */
+  dopaPush: () => void
   /** 飛んでいたカードがマスに着いた */
   landed: (id: number) => void
   setLevel: (level: FxLevel) => void
@@ -135,6 +209,15 @@ let flightTimers: ReturnType<typeof setTimeout>[] = []
 const FLIGHT_GRACE_MS = 800
 
 export const useFx = create<FxStore>()((set, get) => {
+  /** 盤面・手札を弾け飛ばす。暗くして溜めてから、音と揺れと一緒に弾ける */
+  const blast = (target: BlastTarget) => {
+    set((s) => ({ dopa: { ...s.dopa, blast: { seq: ++seq, target } } }))
+    const sound = useSound.getState()
+    sound.play('dopaImpact')
+    sound.play('dopaBomb', DOPA_BLAST_HUSH_MS)
+    flightTimers.push(setTimeout(() => set({ shake: { seq: ++seq, strength: 3 } }), DOPA_BLAST_HUSH_MS))
+  }
+
   const advance = () => {
     timer = null
     const [next, ...rest] = get().queue
@@ -142,9 +225,17 @@ export const useFx = create<FxStore>()((set, get) => {
       set({ current: null })
       return
     }
-    const shake = next.shake && get().level === 'full' ? { seq: ++seq, strength: next.shake } : get().shake
+    const level = get().level
+    const dopa = level === 'dopa'
+    // ドパガキモードでは、どのカットインでも揺らし、もともと揺れるものは1段強くする
+    const strength = dopa && !MINOR_KINDS.has(next.kind) ? (((next.shake ?? 0) + 1) as 1 | 2 | 3) : next.shake
+    const shake = strength && isRich(level) ? { seq: ++seq, strength } : get().shake
     set({ current: next, queue: rest, shake })
-    useSound.getState().playCutin(next)
+    // 暗転して溜めるときは、明けるところで鳴らす
+    useSound.getState().playCutin(next, dopa && dopaFreezes(next) ? DOPA_FREEZE_MS : 0, dopa)
+    // Qボンバーは盤面を、終了は盤面と手札を弾け飛ばす
+    if (dopa && next.kind === 'bomb') blast('board')
+    if (dopa && next.kind === 'gameEnd') blast('both')
     timer = setTimeout(advance, next.durationMs)
   }
 
@@ -193,6 +284,24 @@ export const useFx = create<FxStore>()((set, get) => {
     seatPops: {},
     shake: null,
     flights: [],
+    dopa: DOPA_IDLE,
+
+    reach(name, mine) {
+      if (get().level !== 'dopa') return
+      set((s) => ({ dopa: { ...s.dopa, reach: { seq: ++seq, name, mine } } }))
+      useSound.getState().play('dopaReach', 0, 1, 1800)
+    },
+
+    dopaPush() {
+      if (get().level !== 'dopa') return
+      const push = get().dopa.push + 1
+      set((s) => ({ dopa: { ...s.dopa, push } }))
+      useSound.getState().play('dopaTurn', 0, pushRate(push))
+      if (push % PUSH_MAX === 0) {
+        useSound.getState().play('dopaHot')
+        blast('hand')
+      }
+    },
 
     landed(id) {
       if (get().flights.some((f) => f.id === id)) set((s) => ({ flights: s.flights.filter((f) => f.id !== id) }))
@@ -200,7 +309,8 @@ export const useFx = create<FxStore>()((set, get) => {
 
     setLevel(level) {
       applyLevel(level)
-      set({ level })
+      // コンボやパワーは、ドパガキモードを選び直すたびに0から
+      set({ level, dopa: DOPA_IDLE })
       if (level === 'off') get().clear()
       try {
         localStorage.setItem(LEVEL_KEY, level)
@@ -223,6 +333,56 @@ export const useFx = create<FxStore>()((set, get) => {
         })
       }
       const flightMs = launch(flightsFor(events, youId))
+      if (get().level === 'dopa') {
+        const result = dopaFor(events, youId, get().dopa)
+        // コンボはすぐに進め(コインの音の高さに使う)、見た目はカードが場に着いてから出す
+        set((s) => ({ dopa: { ...s.dopa, combo: result.combo, chain: result.chain } }))
+        const show = () => {
+          set((s) => ({
+            dopa: {
+              ...s.dopa,
+              // 隅の数は、倍率が出るのと同時に増やす(続けて届いた分を取りこぼさないよう、足し算で進める)
+              power: s.dopa.power + result.gain,
+              mult:
+                result.mult > 0
+                  ? { seq: ++seq, value: result.mult, gain: result.gain, mine: result.mine }
+                  : s.dopa.mult,
+              praise: result.praise ? { seq: ++seq, ...result.praise } : s.dopa.praise,
+              milestone: result.milestone ? { seq: ++seq, kind: result.milestone } : s.dopa.milestone,
+              broke: result.broke > 0 ? { seq: ++seq, combo: result.broke } : s.dopa.broke,
+            },
+          }))
+          const sound = useSound.getState()
+          if (result.praise) sound.play('dopaPraise')
+          // 倍率が大きいほど、強く揺らす
+          const tier = multTier(result.mult)
+          if (result.mine && tier >= 2) {
+            set({ shake: { seq: ++seq, strength: tier >= 4 ? 3 : tier === 3 ? 2 : 1 } })
+            if (tier >= 3) sound.play('dopaFanfare')
+          }
+          if (result.milestone) {
+            // コンボの節目で、盤面と手札が弾け飛ぶ
+            sound.play('dopaHot')
+            sound.play('dopaCheer', DOPA_BLAST_HUSH_MS + 200)
+            blast('both')
+          }
+        }
+        // 暗転に当たったら、カードが着いたところで真っ暗にして音を止め、明けてから倍率を見せる
+        const reveal =
+          result.blackout > 0
+            ? () => {
+                set((s) => ({ dopa: { ...s.dopa, blackout: { seq: ++seq, mult: result.blackout } } }))
+                useSound.getState().play('dopaImpact')
+                useSound.getState().play('dopaJackpot', DOPA_BLACKOUT_MS)
+                useSound.getState().play('dopaCheer', DOPA_BLACKOUT_MS + 150)
+                flightTimers.push(setTimeout(show, DOPA_BLACKOUT_MS))
+              }
+            : show
+        if (result.mult > 0 || result.praise || result.milestone || result.broke > 0) {
+          if (flightMs > 0) flightTimers.push(setTimeout(reveal, flightMs))
+          else reveal()
+        }
+      }
       const cutins = cutinsFor(events, name, youId)
       // カードが場に着いてからカットインを出す(8切りなどで、飛んでいるカードを覆わない)
       if (flightMs > 0 && cutins.length > 0) flightTimers.push(setTimeout(() => enqueue(cutins), flightMs))
@@ -238,7 +398,7 @@ export const useFx = create<FxStore>()((set, get) => {
       timer = null
       for (const t of flightTimers) clearTimeout(t)
       flightTimers = []
-      set({ current: null, queue: [], seatPops: {}, shake: null, flights: [] })
+      set({ current: null, queue: [], seatPops: {}, shake: null, flights: [], dopa: DOPA_IDLE })
     },
   }
 })

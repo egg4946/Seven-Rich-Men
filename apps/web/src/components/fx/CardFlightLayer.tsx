@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import { useLayoutEffect, useState } from 'react'
 import { JOKER } from '@srm/game-core'
-import { useFx, type Flight } from '../../fx/store'
+import { isRich, useFx, type Flight } from '../../fx/store'
 import { BoardFace, CardBack, boardFaceClass } from '../PlayingCard'
 
 /** 行き先のマスと、そこから見た飛び立つ位置のずれ */
@@ -96,7 +96,7 @@ function FlyingCard({ flight, full }: { flight: Flight; full: boolean }) {
 /** 手札から場へ飛ぶカードの層。画面の操作を妨げないよう pointer-events を切る */
 export function CardFlightLayer() {
   const flights = useFx((s) => s.flights)
-  const full = useFx((s) => s.level === 'full')
+  const full = useFx((s) => isRich(s.level))
   if (flights.length === 0) return null
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[40] overflow-hidden">

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { MINOR_KINDS } from '../../fx/events'
-import { particleCount, useFx } from '../../fx/store'
+import { isRich, particleCount, useFx } from '../../fx/store'
 import { cx } from '../../ui/cx'
 import { RotateIcon } from '../../ui/icons'
 import { BouncyText } from './BouncyText'
@@ -28,7 +28,7 @@ export function CutinLayer() {
   const level = useFx((s) => s.level)
   if (!cutin) return null
 
-  const full = level === 'full'
+  const full = isRich(level)
   const style = { '--fx-dur': `${cutin.durationMs}ms` } as CSSProperties
   const tone = `fx-tone-${cutin.tone}`
 
