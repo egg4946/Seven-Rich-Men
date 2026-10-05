@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes } from 'react'
+import { useSound } from '../sound/store'
 import { cx } from '../ui/cx'
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'subtle'
@@ -30,6 +31,7 @@ export function Button({
   type = 'button',
   disabled,
   className,
+  onClick,
   ...rest
 }: ButtonProps) {
   return (
@@ -48,6 +50,11 @@ export function Button({
         SIZE[size],
         className,
       )}
+      onClick={(event) => {
+        onClick?.(event)
+        // 押した結果のあとに鳴らす(音の切り替えは、切り替えたあとの大きさで鳴る)
+        useSound.getState().play('click')
+      }}
       {...rest}
     />
   )

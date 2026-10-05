@@ -8,6 +8,7 @@ import { Kira } from '../components/fx/Kira'
 import { ChoiceChip } from '../components/ChoiceChip'
 import { RulesDialog } from '../components/RulesDialog'
 import { SeriesSettings } from '../components/SeriesSettings'
+import { SoundToggle } from '../components/SoundToggle'
 import { Toasts } from '../components/Toasts'
 import { useGameStore } from '../game/store'
 import { SLOW_CONNECT_MS, wakeServer } from '../online/client'
@@ -251,10 +252,11 @@ export function TitleScreen() {
           </Button>
         </section>
 
-        <div className="mt-6 leading-normal">
+        <div className="mt-6 flex items-center justify-between leading-normal">
           <Button variant="subtle" onClick={() => setRulesOpen(true)}>
             ルールを見る
           </Button>
+          <SoundToggle />
         </div>
       </div>
 

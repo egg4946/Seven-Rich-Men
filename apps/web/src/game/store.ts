@@ -15,7 +15,9 @@ import {
 } from '@srm/game-core'
 import type { GameUpdate, RoomSettings, RoomView, SeriesView } from '@srm/protocol'
 import { exchangeCutin, sevensCutin, startCutin } from '../fx/events'
-import { useFx } from '../fx/store'
+import { FLIGHT_MS, useFx } from '../fx/store'
+import { soundsFor } from '../sound/events'
+import { useSound } from '../sound/store'
 import {
   createOnlineClient,
   loadLastRoom,
@@ -238,6 +240,10 @@ export const useGameStore = create<GameStore>()((set, get) => {
       const toast = toastForEvent(event, nameOf, youId)
       if (toast) pushToast(toast.tone, toast.message)
     }
+    // カードの音は、場に着くところに合わせる
+    const fxLevel = useFx.getState().level
+    const flyMs = fxLevel === 'off' ? 0 : FLIGHT_MS[fxLevel]
+    for (const cue of soundsFor(events, youId, flyMs)) useSound.getState().play(cue.name, cue.delayMs)
     useFx.getState().emit(events, nameOf, youId)
     // 交換が終わると7が置かれて7渡しになるので、ここで7渡しの説明を出す
     if (events.some((e) => e.type === 'CARDS_EXCHANGED') && view.pending?.type === 'giveSevens') {

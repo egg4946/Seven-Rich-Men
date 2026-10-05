@@ -12,6 +12,7 @@ import { LogPanel } from '../components/LogPanel'
 import { OpponentSeat } from '../components/OpponentSeat'
 import { ResultDialog } from '../components/ResultDialog'
 import { RulesDialog } from '../components/RulesDialog'
+import { SoundToggle } from '../components/SoundToggle'
 import { TimerBar } from '../components/TimerBar'
 import { Toasts } from '../components/Toasts'
 import { CardFlightLayer } from '../components/fx/CardFlightLayer'
@@ -21,6 +22,7 @@ import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
 import { nextPlayerId, opponentsInSeatOrder, sevensPlaced } from '../game/turnOrder'
+import { useSound } from '../sound/store'
 import { cx } from '../ui/cx'
 import { useChangeCount } from '../ui/useChangeCount'
 import { GaugeIcon, RotateIcon, SparkleIcon, TurnArrowIcon } from '../ui/icons'
@@ -99,6 +101,7 @@ export function GameScreen() {
   const shake = useFx((s) => s.shake)
   // 演出が流れ終わってから結果を出す(GAME SET のカットインと重ねない)
   const fxIdle = useFx((s) => s.current === null && s.queue.length === 0)
+  const playSound = useSound((s) => s.play)
   const boardRef = useRef<HTMLElement>(null)
   // 自分のパスが減ったら、残りの数を揺らす(フックなので、view が無いときの早期 return より前で呼ぶ)
   const myPassChanges = useChangeCount(view?.you.passesLeft)
@@ -150,6 +153,7 @@ export function GameScreen() {
     // 交換で必ず渡すカード・渡せないカードは選び直せない
     if (mode_.type === 'exchange' && !mode_.choices.includes(id)) return
     setJokerCell(null)
+    playSound('cardSelect')
     setSelected((current) => {
       if (current.includes(id)) return current.filter((x) => x !== id)
       if (mode_.type === 'give') return current.length >= mode_.count ? current : [...current, id]
@@ -292,6 +296,7 @@ export function GameScreen() {
               <span className="hidden sm:inline">演出:</span>
               {FX_LEVEL_LABEL[fxLevel]}
             </Button>
+            <SoundToggle />
             <Button variant="subtle" size="sm" onClick={() => setRulesOpen(true)}>
               ルール
             </Button>

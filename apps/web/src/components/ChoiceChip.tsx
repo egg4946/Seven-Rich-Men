@@ -1,3 +1,4 @@
+import { useSound } from '../sound/store'
 import { cx } from '../ui/cx'
 import { CheckIcon } from '../ui/icons'
 
@@ -32,7 +33,10 @@ export function ChoiceChip({
         checked={checked}
         disabled={disabled}
         aria-disabled={disabled || undefined}
-        onChange={onChange}
+        onChange={() => {
+          onChange()
+          useSound.getState().play('click')
+        }}
         className="sr-only"
       />
       <span className="flex items-center gap-1 text-sm font-semibold">

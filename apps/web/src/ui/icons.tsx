@@ -64,6 +64,16 @@ export function SparkleIcon(props: IconProps) {
   )
 }
 
+/** 音の切り替え(スピーカー)。オフでは音の波の代わりに×を描く */
+export function SoundIcon({ muted, ...props }: IconProps & { muted: boolean }) {
+  return (
+    <svg {...stroke} {...props}>
+      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path d={muted ? 'm16 9.5 5 5M21 9.5l-5 5' : 'M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13'} />
+    </svg>
+  )
+}
+
 /** CPU の速さの切り替え(メーター) */
 export function GaugeIcon(props: IconProps) {
   return (
