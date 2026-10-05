@@ -19,7 +19,7 @@ export const KIRA_AROUND: KiraSpot[] = [
 
 /**
  * 4つ角の星がきらっと光って消える。1回だけ動く飾り(aria-hidden)。
- * 親は position を持っていること。控えめ・オフでは CSS で出さない。
+ * 親は position を持っていること。控えめ・オフでは CSS で出さない(豪華とドパガキで出す)。
  */
 export function Kira({
   spots = KIRA_AROUND,

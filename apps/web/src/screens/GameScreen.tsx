@@ -1,5 +1,5 @@
 import { LayoutGroup } from 'motion/react'
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { CardId, Cell } from '@srm/game-core'
 import { Badge, TITLE_TONE } from '../components/Badge'
 import { Board } from '../components/Board'
@@ -18,6 +18,7 @@ import { Toasts } from '../components/Toasts'
 import { CardFlightLayer } from '../components/fx/CardFlightLayer'
 import { LoadingDots } from '../components/fx/BouncyText'
 import { CutinLayer } from '../components/fx/CutinLayer'
+import { PUSH_MAX } from '../fx/dopa'
 import { FX_LEVEL_LABEL, NEXT_FX_LEVEL, useFx } from '../fx/store'
 import { boardMarks, quickAction, selectionMode, viewDecisionKey, type BoardMark } from '../game/selection'
 import { useGameStore } from '../game/store'
@@ -99,6 +100,8 @@ export function GameScreen() {
   const fxLevel = useFx((s) => s.level)
   const setFxLevel = useFx((s) => s.setLevel)
   const shake = useFx((s) => s.shake)
+  const dopaPush = useFx((s) => s.dopa.push)
+  const pushDopa = useFx((s) => s.dopaPush)
   // 演出が流れ終わってから結果を出す(GAME SET のカットインと重ねない)
   const fxIdle = useFx((s) => s.current === null && s.queue.length === 0)
   const playSound = useSound((s) => s.play)
@@ -110,7 +113,7 @@ export function GameScreen() {
   useEffect(() => {
     const el = boardRef.current
     if (!shake || !el || typeof el.animate !== 'function') return
-    const a = shake.strength === 2 ? 7 : 4
+    const a = shake.strength === 3 ? 14 : shake.strength === 2 ? 7 : 4
     const animation = el.animate(
       [
         { transform: 'translate(0, 0)' },
@@ -120,7 +123,7 @@ export function GameScreen() {
         { transform: `translate(${a / 2}px, 0)` },
         { transform: 'translate(0, 0)' },
       ],
-      { duration: shake.strength === 2 ? 480 : 320, easing: 'ease-out' },
+      { duration: shake.strength === 3 ? 620 : shake.strength === 2 ? 480 : 320, easing: 'ease-out' },
     )
     return () => animation.cancel()
   }, [shake])
@@ -289,10 +292,28 @@ export function GameScreen() {
               variant="subtle"
               size="sm"
               aria-label={`演出: ${FX_LEVEL_LABEL[fxLevel]}(押すと${FX_LEVEL_LABEL[NEXT_FX_LEVEL[fxLevel]]}に切り替え)`}
-              onClick={() => setFxLevel(NEXT_FX_LEVEL[fxLevel])}
+              onClick={() => {
+                const next = NEXT_FX_LEVEL[fxLevel]
+                setFxLevel(next)
+                // 光と音が多いモードなので、切り替えたことを知らせる
+                if (next === 'dopa') {
+                  playSound('dopaJackpot')
+                  useFx.getState().push({
+                    kind: 'notice',
+                    tone: 'gold',
+                    title: 'ドパガキモード',
+                    sub: '光の点滅と音が多いモードです',
+                  })
+                }
+              }}
               className="px-2 sm:px-3"
             >
-              <SparkleIcon className={cx('h-4 w-4', fxLevel === 'off' ? 'text-slate-400' : 'text-primary-500')} />
+              <SparkleIcon
+                className={cx(
+                  'h-4 w-4',
+                  fxLevel === 'off' ? 'text-slate-400' : fxLevel === 'dopa' ? 'dopa-icon' : 'text-primary-500',
+                )}
+              />
               <span className="hidden sm:inline">演出:</span>
               {FX_LEVEL_LABEL[fxLevel]}
             </Button>
@@ -404,6 +425,21 @@ export function GameScreen() {
             <ConnectionBanner />
           </div>
           {mode_.type !== 'none' && <div aria-hidden="true" className="fx-turn-line" />}
+          {/* ドパガキモードのボタン。ゲームは進まず、押すたびに溜まって、溜まり切ると手札が弾け飛ぶ */}
+          {fxLevel === 'dopa' && mode_.type === 'turn' && (
+            <button
+              type="button"
+              aria-label={`PUSH(演出だけのボタン。${dopaPush}回押した)`}
+              className="dopa-push"
+              style={{ '--p': (dopaPush % PUSH_MAX) / PUSH_MAX } as CSSProperties}
+              onClick={pushDopa}
+            >
+              <span key={dopaPush}>
+                PUSH!
+                {dopaPush > 0 && <small>×{dopaPush}</small>}
+              </span>
+            </button>
+          )}
           <div className="mx-auto max-w-6xl space-y-2 px-4 py-2 md:space-y-3 md:py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
               <p aria-live="polite" className="text-sm font-semibold text-slate-900">

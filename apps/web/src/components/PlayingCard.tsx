@@ -1,6 +1,8 @@
 import { animate, motion, useMotionValue, type PanInfo, type Transition } from 'motion/react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { parseCard, type CardId } from '@srm/game-core'
+import type { HoldTier } from '../fx/dopa'
+import { useFx } from '../fx/store'
 import { cx } from '../ui/cx'
 import { RANK_EFFECT_SHORT, SUIT_SYMBOL, cardName, isRedSuit, rankLabel } from '../ui/labels'
 
@@ -59,6 +61,7 @@ export function HandCard({
   mutedLabel = '今は出せません',
   revealed,
   enter,
+  hold,
   onClick,
   onPlay,
 }: {
@@ -69,6 +72,8 @@ export function HandCard({
   mutedLabel?: string
   revealed: boolean
   enter?: CardEnter | null
+  /** ドパガキモードで、出せるカードの縁を、熱さに応じた色で光らせる */
+  hold?: HoldTier | null
   onClick?: () => void
   onPlay?: () => void
 }) {
@@ -80,6 +85,7 @@ export function HandCard({
     // 手札を重ねて並べたときも、選んだカードは右隣より手前に出す
     selected ? 'z-[5] border-primary-500 ring-2 ring-primary-500' : 'border-slate-200',
     onClick && 'hover:border-slate-300 focus-visible:ring-2 focus-visible:ring-primary-500/50 focus-visible:outline-none',
+    hold && `dopa-hold dopa-hold-${hold}`,
   )
   const appear = {
     initial: enter ? { opacity: 0, scale: 0.4, rotate: -14 } : false,
@@ -231,6 +237,8 @@ export function BoardCard({
   const [ring, setRing] = useState(!!enter?.ring)
   const delay = enter?.delay ?? 0
   const effect = !joker && !forced && !!cell && RANK_EFFECT_SHORT[cell.rank] !== undefined
+  // ドパガキモードでは、どのカードの着地でも放射線を飛ばす
+  const dopa = useFx((s) => s.level === 'dopa')
   const initial = !enter ? false : enter.landing ? { scaleX: 1.14, scaleY: 0.8 } : { opacity: 0, scale: 1.7 }
   return (
     <motion.div
@@ -249,7 +257,7 @@ export function BoardCard({
           onAnimationEnd={() => setRing(false)}
         />
       )}
-      {ring && effect && (
+      {ring && (effect || dopa) && (
         <span
           aria-hidden="true"
           className="fx-burst"

@@ -5,7 +5,7 @@ import { App } from './App'
 import { useFx } from './fx/store'
 import './styles.css'
 
-/** Motion の動き(カードの移動・登場)も演出の量に合わせる。オフでは止め、豪華・控えめでは動かす */
+/** Motion の動き(カードの移動・登場)も演出の量に合わせる。オフでは止め、それ以外では動かす */
 function MotionRoot({ children }: { children: ReactNode }) {
   const off = useFx((s) => s.level === 'off')
   return <MotionConfig reducedMotion={off ? 'always' : 'never'}>{children}</MotionConfig>

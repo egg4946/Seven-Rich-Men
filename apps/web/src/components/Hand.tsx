@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-import type { CardId, PlayerView } from '@srm/game-core'
+import { rankOf, type CardId, type PlayerView } from '@srm/game-core'
+import { holdTier } from '../fx/dopa'
+import { useFx } from '../fx/store'
 import { handOverlap } from '../game/handLayout'
 import { playableCards, type SelectionMode } from '../game/selection'
 import { cx } from '../ui/cx'
@@ -24,6 +26,8 @@ export function Hand({
   const hand = view.you.hand
   // 7渡しは複数枚を選ぶだけなので、すぐに出す操作は付けない
   const canPlay = mode.type === 'turn' || mode.type === 'ten'
+  // ドパガキモードでは、自分の番に出せるカードの縁を光らせる
+  const dopaHold = useFx((s) => s.level === 'dopa') && canPlay && playable !== null
 
   // 前に描いた手札。新しく来たカードだけ登場させる(最初の表示は1枚ずつ配る)
   const known = useRef<Set<CardId> | null>(null)
@@ -83,6 +87,7 @@ export function Hand({
             mutedLabel={mode.type === 'exchange' ? '強い順ではないので渡せません' : undefined}
             revealed={revealed.has(id)}
             enter={enterOf(id)}
+            hold={dopaHold && playable.has(id) ? holdTier(rankOf(id), hand.length) : null}
             onClick={mode.type === 'none' ? undefined : () => onToggle(id)}
             onPlay={canPlay ? () => onPlay(id) : undefined}
           />

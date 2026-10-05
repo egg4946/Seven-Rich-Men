@@ -27,9 +27,9 @@ interface SoundStore {
   level: SoundLevel
   setLevel: (level: SoundLevel) => void
   /** delayMs だけ待ってから鳴らす。鳴らす時点の大きさを使う */
-  play: (name: SoundName, delayMs?: number) => void
-  /** カットインが出るときの音 */
-  playCutin: (spec: Pick<CutinSpec, 'kind' | 'mine'>, delayMs?: number) => void
+  play: (name: SoundName, delayMs?: number, rate?: number, maxMs?: number) => void
+  /** カットインが出るときの音。dopa はドパガキモードの音を重ねるか */
+  playCutin: (spec: Pick<CutinSpec, 'kind' | 'mine'>, delayMs?: number, dopa?: boolean) => void
 }
 
 export const useSound = create<SoundStore>()((set, get) => ({
@@ -44,16 +44,16 @@ export const useSound = create<SoundStore>()((set, get) => ({
     }
   },
 
-  play(name, delayMs = 0) {
+  play(name, delayMs = 0, rate = 1, maxMs) {
     const now = () => {
       const level = get().level
-      if (level !== 'off') playSound(name, VOLUME[level])
+      if (level !== 'off') playSound(name, VOLUME[level], rate, maxMs)
     }
     if (delayMs > 0) setTimeout(now, delayMs)
     else now()
   },
 
-  playCutin(spec, delayMs = 0) {
-    for (const name of cutinSounds(spec)) get().play(name, delayMs)
+  playCutin(spec, delayMs = 0, dopa = false) {
+    for (const name of cutinSounds(spec, dopa)) get().play(name, delayMs)
   },
 }))
