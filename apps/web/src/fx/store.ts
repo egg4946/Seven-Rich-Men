@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { GameEvent, PlayerId } from '@srm/game-core'
+import { useSound } from '../sound/store'
 import type { NameOf } from '../ui/labels'
 import {
   KEEP_KINDS,
@@ -63,6 +64,8 @@ function originOf(spec: FlightSpec): Flight['from'] {
 const LEVEL_KEY = 'srm:fx'
 /** 待ち行列の上限。CPUが続けて効果を出しても、古い演出をいつまでも見せない */
 const QUEUE_MAX = 3
+/** 演出がオフのとき、同時に起きたカットインの音をずらす間隔 */
+const OFF_SOUND_GAP_MS = 600
 
 function prefersReducedMotion(): boolean {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -141,12 +144,18 @@ export const useFx = create<FxStore>()((set, get) => {
     }
     const shake = next.shake && get().level === 'full' ? { seq: ++seq, strength: next.shake } : get().shake
     set({ current: next, queue: rest, shake })
+    useSound.getState().playCutin(next)
     timer = setTimeout(advance, next.durationMs)
   }
 
   const enqueue = (specs: CutinSpec[]) => {
     const level = get().level
-    if (specs.length === 0 || level === 'off') return
+    if (level === 'off') {
+      // カットインは出さないが、音は演出の量と別に選べるので、重ならないよう順に鳴らす
+      specs.forEach((spec, i) => useSound.getState().playCutin(spec, i * OFF_SOUND_GAP_MS))
+      return
+    }
+    if (specs.length === 0) return
     // 裏にあるタブでは見えないので溜めない(戻ったときに古い演出が続けて流れるのを防ぐ)
     if (typeof document !== 'undefined' && document.hidden) return
     const items = specs.map((spec) => ({ ...spec, id: ++seq, durationMs: durationOf(spec, level) }))
@@ -201,7 +210,10 @@ export const useFx = create<FxStore>()((set, get) => {
     },
 
     emit(events, name, youId) {
-      if (get().level === 'off') return
+      if (get().level === 'off') {
+        enqueue(cutinsFor(events, name, youId))
+        return
+      }
       const pops = seatPopsFor(events, youId)
       if (pops.length > 0) {
         set((s) => {
